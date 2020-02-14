@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <math.h>
 
+#include <cuda.h>
+
 
 void Mul(float *A, float *B, int hA, int wA, int wB, float *C)
 {
@@ -14,6 +16,15 @@ void Mul(float *A, float *B, int hA, int wA, int wB, float *C)
 			for (k=0; k<wA; k++)
 				C[i*wB+j] += A[i*wA+k]*B[k*wB+j];
 		}
+}
+
+__global__ void cudaMul(float * A, float * B, int ha, int wa, int wB, float * C) {
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if (i < ha)
+		for (int j = 0; j < wB; j++)
+			for (int k = 0; k < wa; k++)
+				C[i*wB+j] += A[i*wa+k]*B[k*wB+j];
 }
 
 
@@ -78,8 +89,10 @@ int main(int argc, char** argv)
 {
 	// Matrix variables
 	float *A, *B, *C;
+	float *A_GPU, *B_GPU, *C_GPU;
+
 	int hA, wA, hB, wB;
-	int i;
+	// int i;
 
 	setbuf(stdout, NULL);
 
@@ -101,26 +114,45 @@ int main(int argc, char** argv)
 	B = (float*)malloc(size_B*sizeof(float));
 	init_matrix(B, hB, wB, 2.0);
 
+	// We will initialize C while cudaMemCpy works
 	int size_C = wB * hA;
-	C = (float*)malloc(size_C*sizeof(float));
-	for (i = 0; i < (hA*wB); i++) {
-		C[i] = 0.0;
-	}
+	
+	cudaMalloc(&A_GPU, size_A*sizeof(float));
+	cudaMalloc(&B_GPU, size_B*sizeof(float));
+	cudaMalloc(&C_GPU, size_C*sizeof(float));
 
+	cudaMemcpy(A_GPU, A, size_A*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(B_GPU, B, size_B*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemset(C_GPU, 0, size_C*sizeof(float));
+
+	C = (float*)malloc(size_C*sizeof(float));
 
 	Mul(A, B, hA, wA, wB, C);
-	//printf("\n\nMATRIX A\n");print_matrix(A, hA, wA);
-	//printf("\n\nMATRIX B\n");print_matrix(B, hB, wB);
-	//printf("\n\nMATRIX C\n");print_matrix(C, hA, wB);
+	printf("\n\nMATRIX A\n");print_matrix(A, hA, wA);
+	printf("\n\nMATRIX B\n");print_matrix(B, hB, wB);
+	printf("\n\nMATRIX C\n");print_matrix(C, hA, wB);
+
+	// Ahora sí que hacemos el calculo
+	dim3 b(1024, 1);
+	dim3 g(ceil(size_C/1024.0), 1);
+	cudaMul<<<g, b>>>(A_GPU, B_GPU, hA, wA, wB, C_GPU);
+
+	cudaMemcpy(C, C_GPU, size_C*sizeof(float), cudaMemcpyDeviceToHost);
 
 	if (!diff(A, B, hA, wA, wB, C))
 		printf("ERROR=GPU.vs.CPU matrix mult differs\n");
 	
 
 	// print Matrix
-	//printf("\n\nMATRIX A\n");print_matrix(A, hA, wA);
-	//printf("\n\nMATRIX B\n");print_matrix(B, hB, wB);
-	//printf("\n\nMATRIX C\n");print_matrix(C, hA, wB);
+	// printf("\n\nMATRIX A\n");print_matrix(A, hA, wA);
+	// printf("\n\nMATRIX B\n");print_matrix(B, hB, wB);
+	printf("\n\nMATRIX C\n");print_matrix(C, hA, wB);
+
+	free(A); free(B); free(C);
+
+	cudaFree(A_GPU);
+	cudaFree(B_GPU);
+	cudaFree(C_GPU);
 
 	return (1);
 }
