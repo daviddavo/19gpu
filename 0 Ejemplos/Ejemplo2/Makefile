@@ -1,11 +1,11 @@
-CC = gcc 
+CC = nvcc 
 
 EXE   = matrixmul 
 
-SOURCES    = main.c
+SOURCES    = main.cu
 
 
-OBJS    = $(SOURCES:.c=.o)
+OBJS    = $(SOURCES:.cu=.o)
 
 CFLAGS     = -O3
 
@@ -16,7 +16,7 @@ SOURCEDIR = .
 $(EXE) :$(OBJS) 
 	$(CC) $(CFLAGS)  -o $@ $? $(LIBS)
 
-$(SOURCEDIR)/%.o : $(SOURCEDIR)/%.c 
+$(SOURCEDIR)/%.o : $(SOURCEDIR)/%.cu 
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 
