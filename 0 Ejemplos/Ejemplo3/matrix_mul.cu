@@ -42,8 +42,10 @@ void Mul(float* A, float* B, int hA, int wA, int wB,
 	// Launch the device computation
 	Muld<<<dimGrid, dimBlock>>>(Ad, Bd, wA, wB, Cd);
 
+
 	// Read C from the device
 	cudaMemcpy(C, Cd, size, cudaMemcpyDeviceToHost);
+	cudaDeviceSynchronize();
 
 	// Free device memory
 	cudaFree(Ad);
@@ -66,10 +68,10 @@ __global__ void Muld(float* A, float* B, int wA, int wB, float* C)
 	int ty = threadIdx.y;
 
 	// Index of the first sub-matrix of A processed by the block
-	int aBegin = ...;
+	int aBegin = wA*BLOCK_SIZE*by;
 
 	// Index of the last sub-matrix of A processed by the block
-	int aEnd = ...;
+	int aEnd = aBegin + wA - 1;
 
 	// Step size used to iterate through the sub-matrices of A
 	int aStep = BLOCK_SIZE;
@@ -95,8 +97,8 @@ __global__ void Muld(float* A, float* B, int wA, int wB, float* C)
 
 		// Load the matrices from global memory to shared memory;
 		// each thread loads one element of each matrix
-		As[ty][tx] = A[...];
-		Bs[ty][tx] = B[...];
+		As[ty][tx] = A[a + wA * ty + tx];
+		Bs[ty][tx] = B[b + wB * ty + tx];
 		// Synchronize to make sure the matrices are loaded
 		__syncthreads();
 
@@ -104,7 +106,7 @@ __global__ void Muld(float* A, float* B, int wA, int wB, float* C)
 		// each thread computes one element
 		// of the block sub-matrix
 		for (int k = 0; k < BLOCK_SIZE; ++k)
-			....
+			Csub += As[ty][k] * Bs[k][tx];
 
 		// Synchronize to make sure that the preceding
 		// computation is done before loading two new
@@ -114,5 +116,5 @@ __global__ void Muld(float* A, float* B, int wA, int wB, float* C)
 	
 	// Write the block sub-matrix to global memory;
 	// each thread writes one element
-	...
+	C[wB * BLOCK_SIZE * by + BLOCK_SIZE * bx + wA * ty + tx] = Csub;
 }

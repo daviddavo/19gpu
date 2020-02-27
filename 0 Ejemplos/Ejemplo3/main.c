@@ -2,7 +2,7 @@
 #include "matrix_mul.h"
 #include <malloc.h>
 #include <stdlib.h>
-
+#include <math.h>
 
 void init_matrix(float *M, int hM, int wM, float k)
 {
@@ -64,7 +64,8 @@ int diff(float *A, float *B, int hA, int wA, int wB, float *C)
 int main(int argc, char** argv)
 {
 	// Matrix variables
-	float *A, *B, *C;
+	float *A, *B, *C; // No need for C
+	float *A_GPU, *B_GPU, *C_GPU;
 	int hA, wA, hB, wB;
 	int i;
 
@@ -81,14 +82,21 @@ int main(int argc, char** argv)
 
 	// Init A and B, malloc C
 	int size_A = wA * hA;
+	// cudaMallocHost(&A, size_A*sizeof(float));
 	A = (float*)malloc(size_A*sizeof(float));
+	// cudaMalloc(&A_GPU, size_A*sizeof(float));
 	init_matrix(A, hA, wA, 1.0);
+	// cudaMemcpy(A_GPU, A, size_A*sizeof(float), 
 
 	int size_B = wB * hB;
+	/// cudaMallocHost(&B, size_B*sizeof(float));
 	B = (float*)malloc(size_B*sizeof(float));
+	// cudaMalloc(&B_GPU, size_B*sizeof(float));
 	init_matrix(B, hB, wB, 2.0);
 
 	int size_C = wB * hA;
+	// cudaMalloc(&C_GPU, size_C*sizeof(float));
+	// cudaMallocHost(&C, size_C*sizeof(float));
 	C = (float*)malloc(size_C*sizeof(float));
 	for (i = 0; i < (hA*wB); i++) {
 		C[i] = 0.0;
@@ -98,16 +106,31 @@ int main(int argc, char** argv)
 	Mul(A, B, hA, wA, wB, C);
 	//printf("\n\nMATRIX A\n");print_matrix(A, hA, wA);
 	//printf("\n\nMATRIX B\n");print_matrix(B, hB, wB);
-	//printf("\n\nMATRIX C\n");print_matrix(C, hA, wB);
+	// printf("\n\nMATRIX C\n");print_matrix(C, hA, wB);
+	
+	// #define THX 32
+	// #define THY 32
+	// dim3 b(THX, THY); // Threads por bloque
+	// dim3 g(ceil(float(hA)/float(b.x)), ceil(float(wB)/float(b.y))); // Bloques por grid
+	// printf("C_SIZE: %d x %d (%d), b: %d x %d, g: %d x %d\n", wB, hA, size_C, b.x, b.y, g.x, g.y);
+	// double t0, t1;
+
+	// t0 = wtime();
+	// cudaMul<<<g, b>>>(A_GPU, B_GPU, hA, wA, wB, C_GPU);
+	// cudaDeviceSynchronize();
+	// t1 = wtime();
+	// printf("Time GPU: %f\n", t1-t0);
+
+	// cudaMemcpy(C, C_GPU, size_C*sizeof(float), cudaMemcpyDeviceToHost);
 
 	if (!diff(A, B, hA, wA, wB, C))
 		printf("ERROR=GPU.vs.CPU matrix mult differs\n");
 	
 
 	// print Matrix
-	//printf("\n\nMATRIX A\n");print_matrix(A, hA, wA);
-	//printf("\n\nMATRIX B\n");print_matrix(B, hB, wB);
-	//printf("\n\nMATRIX C\n");print_matrix(C, hA, wB);
+	// printf("\n\nMATRIX A\n");print_matrix(A, hA, wA);
+	// printf("\n\nMATRIX B\n");print_matrix(B, hB, wB);
+	// printf("\n\nMATRIX C\n");print_matrix(C, hA, wB);
 
 	return (1);
 }
