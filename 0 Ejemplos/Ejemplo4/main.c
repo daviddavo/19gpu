@@ -1,4 +1,8 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
 
+#include "matrix_mul.h"
 
 void init_matrix(float *M, int hM, int wM, float k)
 {

@@ -4,10 +4,10 @@
 all : kernels main
 
 CUDA_INCLUDE=/usr/local/cuda/include/
-CUDA_LIB=/usr/local/cuda-7.5/lib64/
+CUDA_LIB=/usr/local/cuda/lib64/
 LIB=-lcudart -lcublas
 CC=gcc
-NVCC=nvcc 
+NVCC=/usr/local/cuda/bin/nvcc 
 LINK=g++
 CFLAGS  = -O3  
 NVCCFLAGS = $(CFLAGS)
