@@ -123,6 +123,7 @@ void transpose1D(float *in, float *out, int n)
 
 #define NTHREADS1D 256
 
+/*
 __global__ void transpose_device(float *in, float *out, int rows, int cols) 
 { 
 	int i, j; 
@@ -131,6 +132,25 @@ __global__ void transpose_device(float *in, float *out, int rows, int cols)
 	if (i<rows)
 		for ( j=0; j<cols; j++) 
 			out [ i * rows + j ] = in [ j * cols + i ]; 
+}*/
+
+#define TPB 32
+__global__ void transpose_device(float *in, float *out, int rows, int cols) {
+	int i, j;
+	__shared__ float tile[TPB][TPB+1];
+
+	i = blockIdx.x * blockDim.x + threadIdx.x;
+	j = blockIdx.y * blockDim.y + threadIdx.y;
+
+	if (i < rows && j < cols) {
+		tile[threadIdx.y][threadIdx.x] = in[rows*j+i];
+	}
+	__syncthreads();
+	i = blockDim.y*blockIdx.y + threadIdx.x;
+	j = blockDim.x*blockIdx.x + threadIdx.y;
+	if (i < rows && j < cols) {
+		out[rows * j + i] = tile[threadIdx.x][threadIdx.y];
+	}
 }
 
 int check(float *GPU, float *CPU, int n)
@@ -181,10 +201,9 @@ int main(int argc, char **argv)
 	cudaMemcpy(darray1D, array1D, n*n*sizeof(float), cudaMemcpyHostToDevice);
 	cudaMalloc((void**)&darray1D_trans, n*n*sizeof(float));
 
-	dim3 dimBlock(NTHREADS1D);
-	int blocks = n/NTHREADS1D;
-		if (n%NTHREADS1D>0) blocks++;
-	dim3 dimGrid(blocks);
+	dim3 dimBlock(TPB, TPB);
+	int blocks = (n+TPB-1)/TPB;
+	dim3 dimGrid(blocks, blocks);
 
 	t0 = getMicroSeconds();
 	transpose_device<<<dimGrid,dimBlock>>>(darray1D, darray1D_trans, n, n);	
@@ -198,5 +217,5 @@ int main(int argc, char **argv)
 		printf("Transpose CPU-GPU differs!!\n");
 
 
-	return(1);
+	return(0);
 }
