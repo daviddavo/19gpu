@@ -30,14 +30,14 @@ void Mul(float* A, float* B, int hA, int wA, int wB,
 	cudaMalloc((void**)&Cd, size);
 
 	// Compute the execution configuration
-	float alpha = 1.0, beta = 0.0;
+	const float alpha = 1.0f, beta = 0.0f;
 	cublasHandle_t handle;
 	cublasCreate(&handle);
 	cublasSgemm(handle,
 		CUBLAS_OP_N, CUBLAS_OP_N,
 		hA,				/* [m] */ 
-		wA,				/* [n] */  
-		wB,				/* [k] */ 
+		wB,				/* [n] */  
+		wA,				/* [k] */ 
 		&alpha,				/* alfa */ 
 		Ad, wA,			/* A[m][k], num columnas (lda) */ 
 		Bd, wB,			/* B[k][n], num columnas (ldb) */
