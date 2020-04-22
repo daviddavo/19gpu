@@ -22,7 +22,95 @@ double get_time()
 	return (t);
 }
 
- 
+bool array_eq(const unsigned *A, const unsigned *B, unsigned n) {
+	for (unsigned i = 0; i < n; i++) {
+		if (A[i] != B[i]) {
+			printf("A[%d] != B[%d]\n", i, i);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// TODO: Make a function where e is a percentage
+bool array_eq_abs(const float *A, const float *B, unsigned n, double e) {
+	for (unsigned i = 0; i < n; i++) {
+		if (fabs(A[i] - B[i]) > e) {
+			printf("A[%d] (%f) != B[%d] (%f), e: %lf, diff: %lf\n", i, A[i], i, B[i], e, fabsf(A[i]-B[i]));
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool array_eq_rel(const float*A, const float *B, unsigned n, double r) {
+	for (unsigned i = 0; i < n; i++) {
+		if (fabs(A[i]/B[i]-1) > r) {
+			printf("A[%d] (%f) != B[%d] (%f), r: %lf, diff: %lf\n", i, A[i], i, B[i], r, fabs(A[i]/B[i] - 1));
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool gpucheck(const uint8_t *im, int height, int width,
+	const uint8_t *imEdge, const float *g_NR, const float *g_G, const float *g_phi,
+	const float *g_Gx, const float *g_Gy, const uint8_t *g_pedge,
+	const float *g_sin_table, const float *g_cos_table,
+	const uint32_t *g_accum, int g_accu_height, int g_accu_width,
+	const int *g_x1, const int *g_y1, const int *g_x2, const int *g_y2, const int *g_nlines)
+{
+	int c_x1[10], c_x2[10], c_y1[10], c_y2[10];
+	float c_sin_table[180], c_cos_table[180];
+
+	uint8_t *c_imEdge = (uint8_t *)malloc(sizeof(uint8_t) * width * height);
+	float *c_NR = (float *)malloc(sizeof(float) * width * height);
+	float *c_G = (float *)malloc(sizeof(float) * width * height);
+	float *c_phi = (float *)malloc(sizeof(float) * width * height);
+	float *c_Gx = (float *)malloc(sizeof(float) * width * height);
+	float *c_Gy = (float *)malloc(sizeof(float) * width * height);
+	uint8_t *c_pedge = (uint8_t *)malloc(sizeof(uint8_t) * width * height);
+
+	//Create the accumulators
+	float c_hough_h = ((sqrt(2.0) * (float)(height>width?height:width)) / 2.0);
+	int c_accu_height = c_hough_h * 2.0; // -rho -> +rho
+	int c_accu_width  = 180;
+	uint32_t *c_accum = (uint32_t*)malloc(c_accu_width*c_accu_height*sizeof(uint32_t));
+
+	init_cos_sin_table(c_sin_table, c_cos_table, 180);
+
+	int c_nlines = 0;
+	line_asist_CPU(im, height, width,
+		c_imEdge, c_NR, c_G, c_phi, c_Gx, c_Gy, c_pedge,
+		c_sin_table, c_cos_table,
+		c_accum, c_accu_height, c_accu_width,
+		c_x1, c_y1, c_x2, c_y2, &c_nlines);
+
+	if (!array_eq_rel(g_NR, c_NR, height*width, 0.25f)) {
+		printf("WARNING: g_NR != c_NR\n");
+		return false;
+	}
+
+	if (!array_eq_rel(g_G, c_G, height*width, 0.25f)) {
+		printf("WARNING: g_G != c_G\n");
+		return false;
+	}
+
+	if(!array_eq(g_accum, c_accum, c_accu_height*c_accu_width)) {
+		printf("WARNING: g_accum != c_accum\n");
+		return false;
+	}
+
+	if(*g_nlines != c_nlines) {
+		printf("WARNING: g_nlines != c_nlines\n");
+		return false;
+	}
+
+	return true;
+}
 
 int main(int argc, char **argv)
 {
@@ -37,9 +125,9 @@ int main(int argc, char **argv)
 
 
 	/* Only accept a concrete number of arguments */
-	if(argc != 3)
+	if(argc < 3 || argc > 4)
 	{
-		printf("./exec image.png [c/g]\n");
+		printf("./exec image.png [c/g] {out.png}\n");
 		exit(-1);
 	}
 
@@ -76,10 +164,28 @@ int main(int argc, char **argv)
 			printf("CPU Exection time %f ms.\n", t1-t0);
 			break;
 		case 'g':
+		{
 			t0 = get_time();
-			//line_asist_GPU(im, x1, x2, y1, y2, &nlines);
-                        t1 = get_time();
+			line_asist_GPU(im, height, width,
+				imEdge, NR, G, phi, Gx, Gy, pedge,
+				sin_table, cos_table,
+				accum, accu_height, accu_width,
+				x1, x2, y1, y2, &nlines);
+            t1 = get_time();
 			printf("GPU Exection time %f ms.\n", t1-t0);
+
+			bool chk = gpucheck(im, height, width,
+					imEdge, NR, G, phi, Gx, Gy, pedge,
+					sin_table, cos_table,
+					accum, accu_height, accu_width,
+					x1, x2, y1, y2, &nlines);
+			if (chk)
+			{
+				printf("CPU's png == GPU's png\n");
+			} else {
+				printf("CPU's png != GPU's png\n");
+			}
+		}
 			break;
 		default:
 			printf("Not Implemented yet!!\n");
@@ -90,5 +196,5 @@ int main(int argc, char **argv)
 
 	draw_lines(imtmp, width, height, x1, y1, x2, y2, nlines);
 
-	write_png_fileRGB("out.png", imtmp, width, height);
+	write_png_fileRGB((argc==4)?argv[3]:"out.png", imtmp, width, height);
 }

@@ -3,3 +3,9 @@
 *.o
 a.out
 matrixmul
+.ptp-sync
+Debug
+.ptp-sync-folder
+.settings
+.project
+.cproject

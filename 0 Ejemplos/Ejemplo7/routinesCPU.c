@@ -6,7 +6,7 @@
 
 #define DEG2RAD 0.017453f
 
-void canny(uint8_t *im, uint8_t *image_out,
+void canny(const uint8_t *im, uint8_t *image_out,
 	float *NR, float *G, float *phi, float *Gx, float *Gy, uint8_t *pedge,
 	float level,
 	int height, int width)
@@ -128,10 +128,10 @@ void getlines(int threshold, uint32_t *accumulators, int accu_width, int accu_he
 					{  
 						if( (ii+rho>=0 && ii+rho<accu_height) && (jj+theta>=0 && jj+theta<accu_width) )  
 						{  
-							if( accumulators[((rho+ii)*accu_width) + (theta+jj)] > max )  
+							if( accumulators[((rho+ii)*accu_width) + (theta+jj)] > max )
 							{
 								max = accumulators[((rho+ii)*accu_width) + (theta+jj)];
-							}  
+							}
 						}  
 					}  
 				}  
@@ -251,7 +251,7 @@ void draw_lines(uint8_t *imgtmp, int width, int height, int *x1, int *y1, int *x
 			}
 }
 
-void line_asist_CPU(uint8_t *im, int height, int width,
+void line_asist_CPU(const uint8_t *im, int height, int width,
 	uint8_t *imEdge, float *NR, float *G, float *phi, float *Gx, float *Gy, uint8_t *pedge,
 	float *sin_table, float *cos_table, 
 	uint32_t *accum, int accu_height, int accu_width,
@@ -272,7 +272,7 @@ void line_asist_CPU(uint8_t *im, int height, int width,
 	else threshold = height/6;
 
 
-	getlines(threshold, accum, accu_width, accu_height, width, height, 
+	getlines(threshold, accum, accu_width, accu_height, width, height,
 		sin_table, cos_table,
 		x1, y1, x2, y2, nlines);
 }
