@@ -4,6 +4,13 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
+extern "C"
+#endif
+void cu_alloc(uint8_t ** imEdge, float **NR, float **G, float **phi, float **Gx,
+	float **Gy, uint8_t **pedge, uint32_t **accum, int width, int height,
+	int accu_height, int accu_width);
+
+#ifdef __cplusplus
 extern "C" 
 #endif
 void line_asist_GPU(uint8_t *im, int height, int width,

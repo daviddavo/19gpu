@@ -25,7 +25,7 @@ double get_time()
 bool array_eq(const unsigned *A, const unsigned *B, unsigned n) {
 	for (unsigned i = 0; i < n; i++) {
 		if (A[i] != B[i]) {
-			printf("A[%d] != B[%d]\n", i, i);
+			printf("A[%d] (%d) != B[%d] (%d)\n", i, A[i], i, B[i]);
 			return false;
 		}
 	}
@@ -89,27 +89,48 @@ bool gpucheck(const uint8_t *im, int height, int width,
 		c_accum, c_accu_height, c_accu_width,
 		c_x1, c_y1, c_x2, c_y2, &c_nlines);
 
-	if (!array_eq_rel(g_NR, c_NR, height*width, 0.25f)) {
+	bool s = true;
+	if (!array_eq_rel(g_NR, c_NR, height*width, 0.01f)) {
 		printf("WARNING: g_NR != c_NR\n");
-		return false;
+		s = false;
 	}
 
-	if (!array_eq_rel(g_G, c_G, height*width, 0.25f)) {
+	if (!array_eq_rel(g_G, c_G, height*width, 0.01f)) {
 		printf("WARNING: g_G != c_G\n");
-		return false;
+		s = false;
+	}
+
+	if(!array_eq_rel(g_phi, c_phi, height*width, 0.25f)) {
+		printf("WARNING: g_phi != c_phi\n");
+		s = false;
 	}
 
 	if(!array_eq(g_accum, c_accum, c_accu_height*c_accu_width)) {
 		printf("WARNING: g_accum != c_accum\n");
-		return false;
+		s = false;
 	}
 
 	if(*g_nlines != c_nlines) {
 		printf("WARNING: g_nlines != c_nlines\n");
-		return false;
+		s = false;
 	}
 
-	return true;
+	return s;
+}
+
+void pag_alloc(uint8_t ** imEdge, float **NR, float **G, float **phi, float **Gx,
+		float **Gy, uint8_t **pedge, uint32_t **accum, int width, int height,
+		int accu_height, int accu_width)
+{
+	*imEdge = (uint8_t *)malloc(sizeof(uint8_t) * width * height);
+	*NR = (float *)malloc(sizeof(float) * width * height);
+	*G = (float *)malloc(sizeof(float) * width * height);
+	*phi = (float *)malloc(sizeof(float) * width * height);
+	*Gx = (float *)malloc(sizeof(float) * width * height);
+	*Gy = (float *)malloc(sizeof(float) * width * height);
+	*pedge = (uint8_t *)malloc(sizeof(uint8_t) * width * height);
+
+	*accum = (uint32_t *)malloc(sizeof(uint32_t) * accu_width * accu_height);
 }
 
 int main(int argc, char **argv)
@@ -137,23 +158,19 @@ int main(int argc, char **argv)
 
 	init_cos_sin_table(sin_table, cos_table, 180);	
 
-	// Create temporal buffers 
-	uint8_t *imEdge = (uint8_t *)malloc(sizeof(uint8_t) * width * height);
-	float *NR = (float *)malloc(sizeof(float) * width * height);
-	float *G = (float *)malloc(sizeof(float) * width * height);
-	float *phi = (float *)malloc(sizeof(float) * width * height);
-	float *Gx = (float *)malloc(sizeof(float) * width * height);
-	float *Gy = (float *)malloc(sizeof(float) * width * height);
-	uint8_t *pedge = (uint8_t *)malloc(sizeof(uint8_t) * width * height);
-
-	//Create the accumulators
+	// Create temporal buffers
+	uint8_t *imEdge;
+	float *NR, *G, *phi, *Gx, *Gy;
+	uint8_t *pedge;
+	uint32_t * accum;
 	float hough_h = ((sqrt(2.0) * (float)(height>width?height:width)) / 2.0);
 	int accu_height = hough_h * 2.0; // -rho -> +rho
 	int accu_width  = 180;
-	uint32_t *accum = (uint32_t*)malloc(accu_width*accu_height*sizeof(uint32_t));
 
 	switch (argv[2][0]) {
 		case 'c':
+			pag_alloc(&imEdge, &NR, &G, &phi, &Gx, &Gy, &pedge, &accum,
+				width, height, accu_height, accu_width);
 			t0 = get_time();
 			line_asist_CPU(im, height, width, 
 				imEdge, NR, G, phi, Gx, Gy, pedge,
@@ -165,6 +182,8 @@ int main(int argc, char **argv)
 			break;
 		case 'g':
 		{
+			cu_alloc(&imEdge, &NR, &G, &phi, &Gx, &Gy, &pedge, &accum,
+				width, height, accu_height, accu_width);
 			t0 = get_time();
 			line_asist_GPU(im, height, width,
 				imEdge, NR, G, phi, Gx, Gy, pedge,

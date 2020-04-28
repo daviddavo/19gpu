@@ -8,8 +8,9 @@
 #include "routinesCPU.h"
 
 #define TPBLKX 32
-#define TPBLKY 24
-#define TPBLK 768 // Theoretical limit of 768
+#define TPBLKY 32
+#define TPBLK 1024
+#define DEG2RAD 0.017453f
 #define PI 3.1415926535f
 
 #define CUDACHECK(f) { \
@@ -41,92 +42,155 @@ __global__ void cu_canny_nr_naive(uint8_t *im, float *NR, int height, int width)
  * Este kernel está limitado por el elevado número de registros usados. ¿Mover la "matriz" de constantes a shared memory tal vez?
  */
 __global__ void cu_canny_nr_shared(const uint8_t * im, float *NR, int height, int width) {
-	unsigned i = blockIdx.x * blockDim.x + threadIdx.x + 2;
-	unsigned j = blockIdx.y * blockDim.y + threadIdx.y + 2;
-	unsigned k =  i * width + j;
+	unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
+	unsigned j = blockIdx.y * blockDim.y + threadIdx.y;
+	// unsigned k =  i*width + j;
+	unsigned k = j*width + i;
 
-	__shared__ uint8_t im_shared [TPBLKX+4][TPBLKY+4];
-	im_shared[threadIdx.x+2][threadIdx.y+2] = im[k];
+	__shared__ uint8_t im_shared [TPBLKY+4][TPBLKX+4];
 
-	// Los 4 bordes
-	if (threadIdx.x < 2) {
-		im_shared[threadIdx.x][threadIdx.y+2] = im[(i-2)*width + j];
+	/*
+	if (threadIdx.y == 0 && threadIdx.x == 0) {
+		for (int ii = 0; ii < TPBLKX+4; ii++) {
+			for (int jj = 0; jj < TPBLKY+4; jj++) {
+				im_shared[jj][ii] = 0;
+			}
+		}
 	}
-	if (threadIdx.y < 2) {
-		im_shared[threadIdx.x+2][threadIdx.y] = im[(i)*width + j - 2];
-	}
-	if (threadIdx.x >= TPBLKX - 2) {
-		im_shared[threadIdx.x+4][threadIdx.y+2] = im[(i+2)*width + j];
-	}
-	if (threadIdx.y >= TPBLKY - 2) {
-		im_shared[threadIdx.x+2][threadIdx.y+4] = im[i*width + j + 2];
+	__syncthreads();
+	*/
+
+	// assert(im_shared[threadIdx.y][threadIdx.x] == 0);
+	im_shared[threadIdx.y][threadIdx.x] = im[k];
+	// assert(im_shared[threadIdx.y][threadIdx.x] == im[k]);
+
+	if (threadIdx.y >= TPBLKY - 4) {
+		// assert(im_shared[threadIdx.y+4][threadIdx.x  ] == 0);
+		im_shared[threadIdx.y+4][threadIdx.x  ] = im[(j+4)*width + i  ];
+		// assert(im_shared[threadIdx.y+4][threadIdx.x  ] == im[(j+4)*width + i  ]);
 	}
 
-	// Las 4 esquinas
-	if (threadIdx.x < 2 && threadIdx.y < 2) {
-		im_shared[threadIdx.x  ][threadIdx.y  ] = im[(i-2)*width + j - 2];
+	if (threadIdx.x >= TPBLKX - 4) {
+		// assert(im_shared[threadIdx.y][threadIdx.x+4] == 0);
+		im_shared[threadIdx.y  ][threadIdx.x+4] = im[(j  )*width + i+4];
+		// assert(im_shared[threadIdx.y  ][threadIdx.x+4] == im[(j  )*width + i+4]);
 	}
-	if (threadIdx.x < 2 && threadIdx.y >= TPBLKY - 2) {
-		im_shared[threadIdx.x  ][threadIdx.y+4] = im[(i-2)*width + j + 2];
-	}
-	if (threadIdx.x >= TPBLKX - 2 && threadIdx.y < 2) {
-		im_shared[threadIdx.x+4][threadIdx.y  ] = im[(i+2)*width + j - 2];
-	}
-	if (threadIdx.x >= TPBLKX - 2 && threadIdx.y >= TPBLKX - 2) {
-		im_shared[threadIdx.x+4][threadIdx.y+4] = im[(i+2)*width + j + 2];
+
+	if (threadIdx.y >= TPBLKY - 4 && threadIdx.x >= TPBLKX - 4) {
+		// assert(im_shared[threadIdx.y+4][threadIdx.x+4] == 0);
+		im_shared[threadIdx.y+4][threadIdx.x+4] = im[(j+4)*width + i+4];
+		// assert(im_shared[threadIdx.y+4][threadIdx.x+4] == im[(j+4)*width + i+4]);
 	}
 
 	__syncthreads();
 
-	// Quitamos (i*width + j) < height*width pues hacemos dicha comprobación
-	// antes de invocar al kernel. Esto aumentó el non-predicted warp efficency
-	if (i < height - 2 && j < width - 2) {
-		/*
+	if (j < height - 4 && i < width - 4) {
+
+#ifdef _VERIFY
 		for (int ii = 0; ii < 5; ii++) {
 			for (int jj = 0; jj < 5; jj++) {
-				assert(im_shared[threadIdx.x+ii][threadIdx.y+jj] == im[(i+ii-2)*width + j+jj-2]);
+				assert(im_shared[threadIdx.y+jj][threadIdx.x+ii] == im[(j+jj)*width + i+ii]);
 			}
 		}
-		*/
+#endif
 
-		NR[k] =
-			( 2.0*im_shared[threadIdx.x  ][threadIdx.y] +  4.0*im_shared[threadIdx.x  ][threadIdx.y+1] +  5.0*im_shared[threadIdx.x  ][threadIdx.y+2] +  4.0*im_shared[threadIdx.x  ][threadIdx.y+3] + 2.0*im_shared[threadIdx.x  ][threadIdx.y+4]
-			+ 4.0*im_shared[threadIdx.x+1][threadIdx.y] +  9.0*im_shared[threadIdx.x+1][threadIdx.y+1] + 12.0*im_shared[threadIdx.x+1][threadIdx.y+2] +  9.0*im_shared[threadIdx.x+1][threadIdx.y+3] + 4.0*im_shared[threadIdx.x+1][threadIdx.y+4]
-			+ 5.0*im_shared[threadIdx.x+2][threadIdx.y] + 12.0*im_shared[threadIdx.x+2][threadIdx.y+1] + 15.0*im_shared[threadIdx.x+2][threadIdx.y+2] + 12.0*im_shared[threadIdx.x+2][threadIdx.y+3] + 5.0*im_shared[threadIdx.x+2][threadIdx.y+4]
-			+ 4.0*im_shared[threadIdx.x+3][threadIdx.y] +  9.0*im_shared[threadIdx.x+3][threadIdx.y+1] + 12.0*im_shared[threadIdx.x+3][threadIdx.y+3] +  9.0*im_shared[threadIdx.x+3][threadIdx.y+4] + 4.0*im_shared[threadIdx.x+3][threadIdx.y+4]
-			+ 2.0*im_shared[threadIdx.x+4][threadIdx.y] +  4.0*im_shared[threadIdx.x+4][threadIdx.y+1] +  5.0*im_shared[threadIdx.x+4][threadIdx.y+3] +  4.0*im_shared[threadIdx.x+4][threadIdx.y+4] + 2.0*im_shared[threadIdx.x+4][threadIdx.y+4])
+		NR[(j+2)*width + i+2] =
+			( 2.0*im_shared[threadIdx.y  ][threadIdx.x] +  4.0*im_shared[threadIdx.y  ][threadIdx.x+1] +  5.0*im_shared[threadIdx.y  ][threadIdx.x+2] +  4.0*im_shared[threadIdx.y  ][threadIdx.x+3] + 2.0*im_shared[threadIdx.y  ][threadIdx.x+4]
+			+ 4.0*im_shared[threadIdx.y+1][threadIdx.x] +  9.0*im_shared[threadIdx.y+1][threadIdx.x+1] + 12.0*im_shared[threadIdx.y+1][threadIdx.x+2] +  9.0*im_shared[threadIdx.y+1][threadIdx.x+3] + 4.0*im_shared[threadIdx.y+1][threadIdx.x+4]
+			+ 5.0*im_shared[threadIdx.y+2][threadIdx.x] + 12.0*im_shared[threadIdx.y+2][threadIdx.x+1] + 15.0*im_shared[threadIdx.y+2][threadIdx.x+2] + 12.0*im_shared[threadIdx.y+2][threadIdx.x+3] + 5.0*im_shared[threadIdx.y+2][threadIdx.x+4]
+			+ 4.0*im_shared[threadIdx.y+3][threadIdx.x] +  9.0*im_shared[threadIdx.y+3][threadIdx.x+1] + 12.0*im_shared[threadIdx.y+3][threadIdx.x+2] +  9.0*im_shared[threadIdx.y+3][threadIdx.x+3] + 4.0*im_shared[threadIdx.y+3][threadIdx.x+4]
+			+ 2.0*im_shared[threadIdx.y+4][threadIdx.x] +  4.0*im_shared[threadIdx.y+4][threadIdx.x+1] +  5.0*im_shared[threadIdx.y+4][threadIdx.x+2] +  4.0*im_shared[threadIdx.y+4][threadIdx.x+3] + 2.0*im_shared[threadIdx.y+4][threadIdx.x+4])
 			/159.0;
 	}
 }
 
-__global__ void cu_canny_g(float * NR, float * Gx, float * Gy, float * G, float * phi, int height, int width) {
+/*
+ * Idea de este kernel: Que cada kernel haga el cálculo de N píxeles (2, por ejemplo),
+ * aumentando el uso de memoria compartida por kernel, y disminuyendo el porcentaje
+ * del área superpuesta que copiamos entre los kernels
+ * Para un kernel que computa N*M píxeles, el pct de los píxeles que escribimos es
+ * (N*M)/((N+4)*(M+4))
+ * 32x32:		79.01%	1 ppl (píxel por kernel)
+ * 32x64:		83.66%	2 ppk
+ * 64x64:		88.58%  2x2 ppk
+ * 128x128:		94.03%  4x4 ppk
+ */
+__global__ void cu_canny_nr_shared2(const uint8_t * im, float *NR, int height, int width) {
+	unsigned i = blockIdx.x * blockDim.x*4 + threadIdx.x;
+	unsigned j = blockIdx.y * blockDim.y + threadIdx.y;
+	// unsigned k =  i*width + j;
+	unsigned k = j*width + i;
+
+	__shared__ volatile uint8_t im_shared [TPBLKY+4][TPBLKX*4+4];
+
+	#pragma unroll
+	for (int ii = 0; ii < 4*blockDim.x; ii += blockDim.x) {
+		im_shared[threadIdx.y][threadIdx.x+ii] = im[k+ii];
+	}
+
+	if (threadIdx.y >= TPBLKY - 4) {
+		#pragma unroll
+		for (int ii = 0; ii < 4*blockDim.x; ii += blockDim.x) {
+			im_shared[threadIdx.y+4][threadIdx.x+ii] = im[(j+4)*width + i + ii];
+		}
+	}
+
+	if (threadIdx.x+3*blockDim.x >= TPBLKX*4 - 4) {
+		im_shared[threadIdx.y  ][threadIdx.x+4+3*blockDim.x] = im[(j  )*width + i+4+3*blockDim.x];
+	}
+
+	if (threadIdx.y >= TPBLKY - 4 && threadIdx.x+3*blockDim.x >= TPBLKX*4 - 4) {
+		#pragma unroll
+		for (int ii = 0; ii < 4*blockDim.x; ii += blockDim.x) {
+			im_shared[threadIdx.y+4][threadIdx.x+4+ii] = im[(j+4)*width + i + 4 + ii];
+		}
+	}
+
+	__syncthreads();
+
+	if (j < height - 4) {
+		for (int ii = 0; ii < 4*blockDim.x && i + ii < width - 4; ii += blockDim.x) {
+			NR[((j+2)*width + i + 2 + ii)] =
+				( 2.0*im_shared[threadIdx.y  ][threadIdx.x+ii] +  4.0*im_shared[threadIdx.y  ][threadIdx.x+ii+1] +  5.0*im_shared[threadIdx.y  ][threadIdx.x+ii+2] +  4.0*im_shared[threadIdx.y  ][threadIdx.x+ii+3] + 2.0*im_shared[threadIdx.y  ][threadIdx.x+ii+4]
+				+ 4.0*im_shared[threadIdx.y+1][threadIdx.x+ii] +  9.0*im_shared[threadIdx.y+1][threadIdx.x+ii+1] + 12.0*im_shared[threadIdx.y+1][threadIdx.x+ii+2] +  9.0*im_shared[threadIdx.y+1][threadIdx.x+ii+3] + 4.0*im_shared[threadIdx.y+1][threadIdx.x+ii+4]
+				+ 5.0*im_shared[threadIdx.y+2][threadIdx.x+ii] + 12.0*im_shared[threadIdx.y+2][threadIdx.x+ii+1] + 15.0*im_shared[threadIdx.y+2][threadIdx.x+ii+2] + 12.0*im_shared[threadIdx.y+2][threadIdx.x+ii+3] + 5.0*im_shared[threadIdx.y+2][threadIdx.x+ii+4]
+				+ 4.0*im_shared[threadIdx.y+3][threadIdx.x+ii] +  9.0*im_shared[threadIdx.y+3][threadIdx.x+ii+1] + 12.0*im_shared[threadIdx.y+3][threadIdx.x+ii+2] +  9.0*im_shared[threadIdx.y+3][threadIdx.x+ii+3] + 4.0*im_shared[threadIdx.y+3][threadIdx.x+ii+4]
+				+ 2.0*im_shared[threadIdx.y+4][threadIdx.x+ii] +  4.0*im_shared[threadIdx.y+4][threadIdx.x+ii+1] +  5.0*im_shared[threadIdx.y+4][threadIdx.x+ii+2] +  4.0*im_shared[threadIdx.y+4][threadIdx.x+ii+3] + 2.0*im_shared[threadIdx.y+4][threadIdx.x+ii+4])
+				/159.0;
+		}
+	}
+}
+
+__global__ void cu_canny_g(float * NR, float * G, float * phi, int height, int width) {
 	unsigned k = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned i = k / width;
 	unsigned j = k % width;
+	float gl[2];
+	float p;
 
-	if (k < height*width && i >= 2 && i < height-2 && j >= 2 && j < width-2) {
-		Gx[k] =
+	if (i >= 2 && i < height-2 && j >= 2 && j < width-2) {
+		gl[0] =	// Gx
 			(1.0*NR[(i-2)*width+(j-2)] +  2.0*NR[(i-2)*width+(j-1)] +  (-2.0)*NR[(i-2)*width+(j+1)] + (-1.0)*NR[(i-2)*width+(j+2)]
 			+ 4.0*NR[(i-1)*width+(j-2)] +  8.0*NR[(i-1)*width+(j-1)] +  (-8.0)*NR[(i-1)*width+(j+1)] + (-4.0)*NR[(i-1)*width+(j+2)]
 			+ 6.0*NR[(i  )*width+(j-2)] + 12.0*NR[(i  )*width+(j-1)] + (-12.0)*NR[(i  )*width+(j+1)] + (-6.0)*NR[(i  )*width+(j+2)]
 			+ 4.0*NR[(i+1)*width+(j-2)] +  8.0*NR[(i+1)*width+(j-1)] +  (-8.0)*NR[(i+1)*width+(j+1)] + (-4.0)*NR[(i+1)*width+(j+2)]
 			+ 1.0*NR[(i+2)*width+(j-2)] +  2.0*NR[(i+2)*width+(j-1)] +  (-2.0)*NR[(i+2)*width+(j+1)] + (-1.0)*NR[(i+2)*width+(j+2)]);
-		Gy[k] =
+		gl[1] =	// Gy
 		 ((-1.0)*NR[(i-2)*width+(j-2)] + (-4.0)*NR[(i-2)*width+(j-1)] +  (-6.0)*NR[(i-2)*width+(j)] + (-4.0)*NR[(i-2)*width+(j+1)] + (-1.0)*NR[(i-2)*width+(j+2)]
 		+ (-2.0)*NR[(i-1)*width+(j-2)] + (-8.0)*NR[(i-1)*width+(j-1)] + (-12.0)*NR[(i-1)*width+(j)] + (-8.0)*NR[(i-1)*width+(j+1)] + (-2.0)*NR[(i-1)*width+(j+2)]
 		+    2.0*NR[(i+1)*width+(j-2)] +    8.0*NR[(i+1)*width+(j-1)] +    12.0*NR[(i+1)*width+(j)] +    8.0*NR[(i+1)*width+(j+1)] +    2.0*NR[(i+1)*width+(j+2)]
 		+    1.0*NR[(i+2)*width+(j-2)] +    4.0*NR[(i+2)*width+(j-1)] +     6.0*NR[(i+2)*width+(j)] +    4.0*NR[(i+2)*width+(j+1)] +    1.0*NR[(i+2)*width+(j+2)]);
 
-		G[k]   = sqrtf((Gx[k]*Gx[k])+(Gy[k]*Gy[k]));	//G = √Gx²+Gy²
-		phi[k] = atan2f(fabs(Gy[k]),fabs(Gx[k]));
+		G[k]   = normf(2, gl);	//G = √Gx²+Gy²
+		p = fabs(atan2f(fabs(gl[1]),fabs(gl[0])));
 
-		if(fabs(phi[k])<=PI/8 )
+		if(p<=PI/8 )
 			phi[k] = 0;
-		else if (fabs(phi[k])<= 3*(PI/8))
+		else if (p<= 3*(PI/8))
 			phi[k] = 45;
-		else if (fabs(phi[k]) <= 5*(PI/8))
+		else if (p <= 5*(PI/8))
 			phi[k] = 90;
-		else if (fabs(phi[k]) <= 7*(PI/8))
+		else if (p <= 7*(PI/8))
 			phi[k] = 135;
 		else phi[k] = 0;
 	}
@@ -182,55 +246,56 @@ void cu_canny(uint8_t *im, uint8_t *image_out,
 	float level,
 	int height, int width)
 {
-	dim3 blockDim(TPBLKX, TPBLKY);
+	dim3 blockDim2d(TPBLKX, TPBLKY);
 	// dim3 gridDim((height*width+TPBLK - 1)/TPBLK);
 	// Nota: El "-2" es por los dos píxeles del borde de abajo a la derecha que no procesaremos
-	dim3 gridDim((height + TPBLKX - 1 - 4)/TPBLKX, (width + TPBLKY - 1 - 4)/TPBLKY);
+	dim3 gridDim2d((width + TPBLKX - 1)/TPBLKX, (height + TPBLKY - 1)/TPBLKY);
+	dim3 blockDim1d(TPBLK);
+	dim3 gridDim1d((width*height+TPBLK-1)/TPBLK);
+
+	cudaStream_t writeBackStream;
+	CUDACHECK(cudaStreamCreateWithFlags(&writeBackStream, cudaStreamNonBlocking));
 
 	uint8_t * d_im_in, * d_im_out, * d_pedge;
-	float * d_NR, *d_Gx, *d_Gy, *d_G, *d_phi;
+	float * d_NR, *d_G, *d_phi;
 	CUDACHECK(cudaMalloc(&d_im_in, sizeof(uint8_t)*height*width));
-
-
-
-	CUDACHECK(cudaMemcpy(d_im_in, im, sizeof(uint8_t)*height*width, cudaMemcpyHostToDevice));
-
-	// TODO: Noise reduction
-	printf("Running kernels<<<(%d, %d), (%d, %d)>>> on image size %dx%d\n",
-			gridDim.x, gridDim.y, blockDim.x, blockDim.y, width, height);
-
 	CUDACHECK(cudaMalloc(&d_NR, sizeof(float)*height*width));
-	cu_canny_nr_shared<<<gridDim, blockDim>>>(d_im_in, d_NR, height, width);
-	cu_canny_nr_naive<<<(height*width+TPBLK-1)/TPBLK, TPBLK>>>(d_im_in, d_NR, height, width);
-	CUDACHECK(cudaMemcpy(NR, d_NR, sizeof(float)*height*width, cudaMemcpyDeviceToHost));
-
-	gridDim = dim3((height*width+TPBLK-1)/TPBLK);
-	blockDim = dim3(TPBLK);
-
-	CUDACHECK(cudaMalloc(&d_Gx, sizeof(float)*height*width));
-	CUDACHECK(cudaMalloc(&d_Gy, sizeof(float)*height*width));
 	CUDACHECK(cudaMalloc(&d_G, sizeof(float)*height*width));
 	CUDACHECK(cudaMalloc(&d_phi, sizeof(float)*height*width));
-	cu_canny_g<<<gridDim, blockDim>>>(d_NR, d_Gx, d_Gy, d_G, d_phi, height, width);
-	CUDACHECK(cudaMemcpy(Gx, d_Gx, sizeof(float)*height*width, cudaMemcpyDeviceToHost));
-	CUDACHECK(cudaMemcpy(Gy, d_Gy, sizeof(float)*height*width, cudaMemcpyDeviceToHost));
-	CUDACHECK(cudaMemcpy(G, d_G, sizeof(float)*height*width, cudaMemcpyDeviceToHost));
-	CUDACHECK(cudaMemcpy(phi, d_phi, sizeof(float)*height*width, cudaMemcpyDeviceToHost));
-	CUDACHECK(cudaFree(d_Gx));
-	CUDACHECK(cudaFree(d_Gy));
-	CUDACHECK(cudaFree(d_NR));
-
 	CUDACHECK(cudaMalloc(&d_pedge, sizeof(uint8_t)*height*width));
-	cu_canny_pedge<<<gridDim, blockDim>>>(d_phi, d_G, d_pedge, height, width);
-	CUDACHECK(cudaMemcpy(pedge, d_pedge, sizeof(uint8_t)*height*width, cudaMemcpyDeviceToHost));
-
 	CUDACHECK(cudaMalloc(&d_im_out, sizeof(uint8_t)*height*width));
-	cu_canny_hthr<<<gridDim, blockDim>>>(d_im_out, d_G, d_pedge, height, width, level/2, level*2);
-	CUDACHECK(cudaMemcpy(image_out, d_im_out, sizeof(uint8_t)*height*width, cudaMemcpyDeviceToHost));
+
+	CUDACHECK(cudaMemcpyAsync(d_im_in, im, sizeof(uint8_t)*height*width, cudaMemcpyHostToDevice));
+
+	printf("Running kernels<<<(%d, %d), (%d, %d)>>> on image size %dx%d\n",
+			gridDim2d.x, gridDim2d.y, blockDim2d.x, blockDim2d.y, width, height);
+
+	cu_canny_nr_shared<<<gridDim2d, blockDim2d, 0>>>(d_im_in, d_NR, height, width);
+	// cu_canny_nr_shared2<<<dim3(gridDim.x/4, gridDim.y), blockDim>>>(d_im_in, d_NR, height, width);
+	// cu_canny_nr_naive<<<(height*width+TPBLK-1)/TPBLK, TPBLK>>>(d_im_in, d_NR, height, width);
+	CUDACHECK(cudaStreamSynchronize(0));
+	CUDACHECK(cudaMemcpyAsync(NR, d_NR, sizeof(float)*height*width, cudaMemcpyDeviceToHost, writeBackStream));
+
+	cu_canny_g<<<gridDim1d, blockDim1d, 0>>>(d_NR, d_G, d_phi, height, width);
+	CUDACHECK(cudaStreamSynchronize(0));
+	CUDACHECK(cudaMemcpyAsync(G, d_G, sizeof(float)*height*width, cudaMemcpyDeviceToHost, writeBackStream));
+	CUDACHECK(cudaMemcpyAsync(phi, d_phi, sizeof(float)*height*width, cudaMemcpyDeviceToHost, writeBackStream));
+
+	cu_canny_pedge<<<gridDim1d, blockDim1d, 0>>>(d_phi, d_G, d_pedge, height, width);
+	CUDACHECK(cudaStreamSynchronize(0));
+	CUDACHECK(cudaMemcpyAsync(pedge, d_pedge, sizeof(uint8_t)*height*width, cudaMemcpyDeviceToHost, writeBackStream));
+
+	cu_canny_hthr<<<gridDim1d, blockDim1d, 0>>>(d_im_out, d_G, d_pedge, height, width, level/2, level*2);
+	CUDACHECK(cudaStreamSynchronize(0));
+	CUDACHECK(cudaMemcpyAsync(image_out, d_im_out, sizeof(uint8_t)*height*width, cudaMemcpyDeviceToHost, writeBackStream));
+
+	CUDACHECK(cudaFree(d_NR));
 	CUDACHECK(cudaFree(d_G));
 	CUDACHECK(cudaFree(d_pedge));
 	CUDACHECK(cudaFree(d_im_in));
 	CUDACHECK(cudaFree(d_im_out));
+
+	CUDACHECK(cudaStreamDestroy(writeBackStream));
 }
 
 __global__ void cu_htkernel(const uint8_t *im, int width, int height, int accu_width, int accu_height,
@@ -249,9 +314,28 @@ __global__ void cu_htkernel(const uint8_t *im, int width, int height, int accu_w
 	{
 		for(theta=0;theta<180;theta++)
 		{
-			sincos(theta, &sin, &cos);
+			sincosf(theta*DEG2RAD, &sin, &cos);
 			float rho = ( ((float)j - center_x) * cos) + (((float)i - center_y) * sin);
 			atomicAdd(&accumulators[ (int)((round(rho + hough_h) * 180.0)) + theta], 1);
+		}
+	}
+}
+
+
+__global__ void cu_htkernel_lr(const uint8_t *im, const int width, const int height, const int accu_width, const int accu_height,
+		const float hough_h, const float *sin_table, const float* cos_table, uint32_t * accumulators)
+{
+	unsigned k = blockIdx.x * blockDim.x + threadIdx.x;
+	float icenter = (float)(k/width) - height/2.0;
+	float jcenter = (float)(k%width) - width/2.0;
+	int theta;
+
+	if( k < width*height && im[k] > 250 ) // Pixel is edge
+	{
+		for(theta=0;theta<180;theta++)
+		{
+			float rho = ( (jcenter * cos_table[theta]) + (icenter * sin_table[theta]));
+			atomicAdd(&accumulators[ (int)((round(rho + hough_h)) * 180.0) + theta], 1);
 		}
 	}
 }
@@ -266,23 +350,28 @@ void cu_houghtransform(uint8_t *im, int width, int height, uint32_t *accumulator
 	dim3 gridDim((height*width+1)/TPBLK);
 	dim3 blockDim(TPBLK);
 
-	// TODO: Remove sin/cos table and calculate on GPU
+	float hough_h = ((sqrt(2.0) * (float)(height>width?height:width)) / 2.0);
+
+	printf("Running kernels<<<(%d, %d), (%d, %d)>>> on image size %dx%d\n",
+		gridDim.x, gridDim.y, blockDim.x, blockDim.y, width, height);
+
 	CUDACHECK(cudaMalloc(&d_im, sizeof(uint8_t)*width*height));
 	CUDACHECK(cudaMalloc(&d_accumulators, sizeof(uint32_t)*accu_width*accu_height));
-	// CUDACHECK(cudaMalloc(&d_sin_table, sizeof(float)*180));
-	// CUDACHECK(cudaMalloc(&d_cos_table, sizeof(float)*180));
+	CUDACHECK(cudaMalloc(&d_sin_table, sizeof(float)*180));
+	CUDACHECK(cudaMalloc(&d_cos_table, sizeof(float)*180));
 	CUDACHECK(cudaMemcpy(d_im, im, sizeof(uint8_t)*width*height, cudaMemcpyHostToDevice));
+	CUDACHECK(cudaMemcpy(d_sin_table, sin_table, sizeof(float)*180, cudaMemcpyHostToDevice));
+	CUDACHECK(cudaMemcpy(d_cos_table, cos_table, sizeof(float)*180, cudaMemcpyHostToDevice));
 	CUDACHECK(cudaMemset(d_accumulators, 0, sizeof(uint32_t)*accu_width*accu_height));
-	// CUDACHECK(cudaMemcpy(d_sin_table, sin_table, sizeof(float)*180, cudaMemcpyHostToDevice));
-	// CUDACHECK(cudaMemcpy(d_cos_table, cos_table, sizeof(float)*180, cudaMemcpyHostToDevice));
-	cu_htkernel<<<gridDim, blockDim>>>(d_im, width, height, accu_width, accu_height,
-		// d_sin_table, d_cos_table,
-		d_accumulators);
+	// cu_htkernel<<<gridDim, blockDim>>>(d_im, width, height, accu_width, accu_height, d_accumulators);
+	// CUDACHECK(cudaMemset(d_accumulators, 0, sizeof(uint32_t)*accu_width*accu_height));
+	cu_htkernel_lr<<<gridDim, blockDim>>>(d_im, width, height, accu_width, accu_height,
+		hough_h, d_sin_table, d_cos_table, d_accumulators);
 	CUDACHECK(cudaMemcpy(accumulators, d_accumulators, sizeof(uint32_t)*accu_width*accu_height, cudaMemcpyDeviceToHost));
 	CUDACHECK(cudaFree(d_im));
 	CUDACHECK(cudaFree(d_accumulators));
-	// CUDACHECK(cudaFree(d_sin_table));
-	// CUDACHECK(cudaFree(d_cos_table));
+	CUDACHECK(cudaFree(d_sin_table));
+	CUDACHECK(cudaFree(d_cos_table));
 }
 
 __global__ void cu_glkernel(int threshold, uint32_t * accumulators, int accu_width, int accu_height, int width, int height,
@@ -340,7 +429,9 @@ __global__ void cu_glkernel(int threshold, uint32_t * accumulators, int accu_wid
 				y2 = height;
 				x2 = ((float)(rho-(accu_height/2)) - ((y2 - (height/2) ) * sin)) / cos + (width / 2);
 			}
-			x1_lines[*lines] = x1;
+
+			// TODO: Solucionar race condition
+			x1_lines[*lines/* +s */] = x1;
 			y1_lines[*lines] = y1;
 			x2_lines[*lines] = x2;
 			y2_lines[*lines] = y2;
@@ -359,7 +450,7 @@ void cu_getlines(int threshold, uint32_t *accumulators, int accu_width, int accu
 	int * d_x1_lines, *d_x2_lines, *d_y1_lines, *d_y2_lines;
 	int * d_lines;
 
-	dim3 gridDim((accu_height*accu_width+1)/TPBLK);
+	dim3 gridDim((accu_height*accu_width+TPBLK-1)/TPBLK);
 	dim3 blockDim(TPBLK);
 
 	CUDACHECK(cudaMalloc(&d_accumulators, sizeof(uint32_t)*accu_width*accu_height));
@@ -368,7 +459,7 @@ void cu_getlines(int threshold, uint32_t *accumulators, int accu_width, int accu
 	CUDACHECK(cudaMalloc(&d_x2_lines, sizeof(int)*maxnlines));
 	CUDACHECK(cudaMalloc(&d_y2_lines, sizeof(int)*maxnlines));
 	CUDACHECK(cudaMalloc(&d_lines, sizeof(int)));
-	CUDACHECK(cudaMemcpy(&d_accumulators, accumulators, sizeof(uint32_t)*accu_width*accu_height, cudaMemcpyHostToDevice));
+	CUDACHECK(cudaMemcpy(d_accumulators, accumulators, sizeof(uint32_t)*accu_width*accu_height, cudaMemcpyHostToDevice));
 	cu_glkernel<<<gridDim, blockDim>>>(threshold, d_accumulators, accu_width, accu_height, width, height,
 		d_x1_lines, d_y1_lines, d_x2_lines, d_y2_lines, d_lines);
 	CUDACHECK(cudaMemcpy(x1_lines, d_x1_lines, sizeof(int)*maxnlines, cudaMemcpyDeviceToHost));
@@ -385,6 +476,19 @@ void cu_getlines(int threshold, uint32_t *accumulators, int accu_width, int accu
 	CUDACHECK(cudaFree(y2_lines));
 }
 
+void cu_alloc(uint8_t ** imEdge, float **NR, float **G, float **phi, float **Gx,
+		float **Gy, uint8_t **pedge, uint32_t **accum, int width, int height,
+		int accu_height, int accu_width)
+{
+	CUDACHECK(cudaMallocHost(imEdge, sizeof(uint8_t) * width * height));
+	CUDACHECK(cudaMallocHost(NR, sizeof(float) * width * height));
+	CUDACHECK(cudaMallocHost(G, sizeof(float) * width * height));
+	CUDACHECK(cudaMallocHost(phi, sizeof(float) * width * height));
+	*Gx = *Gy = NULL;
+	CUDACHECK(cudaMallocHost(pedge, sizeof(uint8_t) * width * height));
+
+	CUDACHECK(cudaMallocHost(accum, sizeof(uint32_t) * accu_width * accu_height));
+}
 
 void line_asist_GPU(uint8_t *im, int height, int width,
 	uint8_t *imEdge, float *NR, float *G, float *phi, float *Gx, float *Gy, uint8_t *pedge,
@@ -404,7 +508,7 @@ void line_asist_GPU(uint8_t *im, int height, int width,
 	/* hough transform */
 	// TODO: Hough Transform
 
-	houghtransform(imEdge, width, height, accum, accu_width, accu_height, sin_table, cos_table);
+	cu_houghtransform(imEdge, width, height, accum, accu_width, accu_height, sin_table, cos_table);
 
 	if (width>height) threshold = width/6;
 	else threshold = height/6;
