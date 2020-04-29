@@ -47,7 +47,7 @@ bool array_eq_abs(const float *A, const float *B, unsigned n, double e) {
 
 bool array_eq_rel(const float*A, const float *B, unsigned n, double r) {
 	for (unsigned i = 0; i < n; i++) {
-		if (fabs(A[i]/B[i]-1) > r) {
+		if (fabs(B[i]) > 0.000005 && fabs(A[i]/B[i]-1) > r) {
 			printf("A[%d] (%f) != B[%d] (%f), r: %lf, diff: %lf\n", i, A[i], i, B[i], r, fabs(A[i]/B[i] - 1));
 			return false;
 		}
