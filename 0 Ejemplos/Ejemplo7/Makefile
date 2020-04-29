@@ -2,7 +2,7 @@
 CXX = g++
 CC = gcc
 
-.PHONY: clean
+.PHONY: clean run
 
 #OpenCV
 CXX_OPENCV_FLAGS+=`pkg-config opencv --cflags`
@@ -36,6 +36,9 @@ SRC = png_io.o routinesCPU.o routinesGPU.o main.o
 
 image: $(SRC) 
 	$(CXX) -o image  $(SRC) $(CXXFLAGS) -I$(CUDA_INCLUDE) -L$(CUDA_LIB) $(LIBS) 
+
+run:
+	./processAll.sh
 
 clean:
 	rm -f *.o image
