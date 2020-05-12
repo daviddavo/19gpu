@@ -9,6 +9,10 @@
 #define DEVICE CL_DEVICE_TYPE_DEFAULT
 #endif
 
+#ifndef BLOCK_DIM
+#define BLOCK_DIM 16
+#endif
+
 
 /* From common.c */
 extern double getMicroSeconds();
@@ -34,7 +38,6 @@ int main(int argc, char **argv)
 	int n;	
 	float *darray1D;
 	float *darray1D_trans;
-    float *darray1D_transLocal;
 
 	float *array1D;
 	float *array1D_trans;
@@ -51,8 +54,9 @@ int main(int argc, char **argv)
 	cl_context context;
 	cl_command_queue command_queue;
 	cl_program program;
-	cl_kernel kernel;
+	cl_kernel kernel, kernelLocal;
 	size_t global[2];
+    size_t work[2];
 	
 	// variables used to read kernel source file
 	FILE *fp;
@@ -75,7 +79,7 @@ int main(int argc, char **argv)
 	array1D           = getmemory1D( n*n );
 	array1D_trans     = getmemory1D( n*n );
 	array1D_trans_GPU = getmemory1D( n*n );
-    array1D_trans_GPULocal = getmemory1D( n * n);
+    array1D_trans_GPULocal = getmemory1D( n*n);
 
 	init1Drand(array1D, n*n);
 
@@ -195,7 +199,7 @@ int main(int argc, char **argv)
 	darray1D       =   clCreateBuffer(context, CL_MEM_READ_ONLY ,  sizeof(float) * n*n, NULL, NULL);
 	darray1D_trans =   clCreateBuffer(context, CL_MEM_WRITE_ONLY,  sizeof(float) * n*n, NULL, NULL);
 
-    // Write a and b vectors into compute device memory 
+    // Write array1D vector into compute device memory 
     err = clEnqueueWriteBuffer(command_queue, darray1D, CL_TRUE, 0, sizeof(float) * n*n, array1D, 0, NULL, NULL);
     if (err != CL_SUCCESS)
     {
@@ -215,6 +219,8 @@ int main(int argc, char **argv)
 	// set the global work dimension size
 	global[0]= n;
 	global[1]= n;
+    work[0] = BLOCK_DIM;
+    work[1] = BLOCK_DIM;
 
 	// Enqueue the kernel object with 
 	// Dimension size = 2, 
@@ -223,12 +229,12 @@ int main(int argc, char **argv)
 	// No event wait list
 	double t0d = getMicroSeconds();
 	err = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, 
-                                   global, NULL, 0, NULL, NULL);
+                                   global, work, 0, NULL, NULL);
 	double t1d = getMicroSeconds();
 
 	if (err != CL_SUCCESS)
 	{	
-		printf("Unable to enqueue kernel command. Error Code=%d\n",err);
+		printf("Unable to enqueue kernel command 1. Error Code=%d (%s)\n",err, err_code(err));
 		exit(1);
 	}
 
@@ -236,13 +242,55 @@ int main(int argc, char **argv)
 	clFinish(command_queue);
 
 	// read the output back to host memory
-	err = clEnqueueReadBuffer(command_queue, darray1D_trans, CL_TRUE, 0, sizeof(float) * n * n, array1D_trans_GPU, 0, NULL, NULL);
+	err = clEnqueueReadBuffer(command_queue, darray1D_trans, CL_TRUE, 0, 
+            sizeof(float) * n * n, array1D_trans_GPU, 0, NULL, NULL);
 	if (err != CL_SUCCESS)
 	{	
 		printf("Error enqueuing read buffer command. Error Code=%d (%s)\n",err, err_code(err));
 		exit(1);
 	}
 
+    // Now we execute the second Kernel (the one wich uses local memory)
+	kernelLocal = clCreateKernel(program, "matrixTransposeLocal", &err);
+	if (err != CL_SUCCESS)
+	{	
+		printf("Unable to create kernel object. Error Code=%d\n",err);
+		exit(1);
+	}
+
+    // The buffer was created with the other buffers
+    
+	// set the kernel arguments
+    err  = clSetKernelArg(kernelLocal, 0, sizeof(cl_mem), &darray1D_trans);
+    err |= clSetKernelArg(kernelLocal, 1, sizeof(cl_mem), &darray1D);
+    err |= clSetKernelArg(kernelLocal, 2, sizeof(float)*BLOCK_DIM*(BLOCK_DIM), NULL);
+    err |= clSetKernelArg(kernelLocal, 3, sizeof(cl_uint), &n); 
+	if (err != CL_SUCCESS)
+	{
+		printf("Unable to set kernel arguments. Error Code=%d (%s)\n",err, err_code(err));
+		exit(1);
+	}
+
+    // Now we enqueue the kernel
+    double t0l = getMicroSeconds();
+    err = clEnqueueNDRangeKernel(command_queue, kernelLocal, 2, NULL,
+            global, work, 0, NULL, NULL);
+    double t1l = getMicroSeconds();
+
+    // And read the output back (again)
+	err = clEnqueueReadBuffer(command_queue, darray1D_trans, CL_TRUE, 0, 
+            sizeof(float) * n * n, array1D_trans_GPULocal, 0, NULL, NULL);
+	if (err != CL_SUCCESS)
+	{	
+		printf("Error enqueuing read buffer command for darray local. Error Code=%d (%s)\n",err, err_code(err));
+		exit(1);
+	}
+
+	if (err != CL_SUCCESS)
+	{	
+		printf("Unable to enqueue kernel command. Error Code=%d\n",err);
+		exit(1);
+	}
 
 	// Tranpose in CPU
 	double t0h = getMicroSeconds();
@@ -251,14 +299,20 @@ int main(int argc, char **argv)
 
 	if (check(array1D_trans_GPU, array1D_trans, n*n)) {
 		printf("\n\nTranspose Host-Device differs!!\n");
+    } else {
+		printf("\n\nTranspose Host-Device tHost=%f (s.) tDevice=%f (s.)\n", (t1h-t0h)/1000000, (t1d-t0d)/1000000);
+    }
+
+	if (check(array1D_trans_GPULocal, array1D_trans, n*n)) {
+		printf("\n\nTranspose Host-Device (Local) differs!!\n");
         // printf("Input:\n");
         // printMATRIX(array1D, n);
         // printf("Output CPU:\n");
         // printMATRIX(array1D_trans, n);
         // printf("Output GPU:\n");
-        // printMATRIX(array1D_trans_GPU, n);
+        // printMATRIX(array1D_trans_GPULocal, n);
     } else {
-		printf("\n\nTranspose Host-Device tHost=%f (s.) tDevice=%f (s.)\n", (t1h-t0h)/1000000, (t1d-t0d)/1000000);
+		printf("\n\nTranspose Host-Device (Local) tHost=%f (s.) tDevice=%f (s.)\n", (t1h-t0h)/1000000, (t1l-t0l)/1000000);
     }
 
 
@@ -268,12 +322,14 @@ int main(int argc, char **argv)
 	// clean up
 	clReleaseProgram(program);
 	clReleaseKernel(kernel);
+    clReleaseKernel(kernelLocal);
 	clReleaseCommandQueue(command_queue);
 	clReleaseContext(context);
 	free(kernel_src);
 	free(array1D);
 	free(array1D_trans);
 	free(array1D_trans_GPU);
+    free(array1D_trans_GPULocal);
 	return 0;
 }
 

@@ -319,9 +319,12 @@ int check(float *GPU, float *CPU, int n)
 {
 	int i;
 
-	for (i=0; i<n; i++)
-		if(GPU[i]!=CPU[i])
+	for (i=0; i<n; i++) {
+		if(GPU[i]!=CPU[i]) {
+            printf("GPU[%d] <%f> != CPU[%d] <%f>", i, GPU[i], i, CPU[i]);
 			return(1);
+        }
+    }
 
 	return(0);
 }
