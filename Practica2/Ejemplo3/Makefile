@@ -3,7 +3,7 @@ ifndef CC
 	CC = gcc
 endif
 
-CCFLAGS=-O3 -lm
+CCFLAGS=-O3 -lm -g
 
 LIBS = -lOpenCL -fopenmp
 
@@ -23,7 +23,7 @@ endif
 
 CCFLAGS += -D DEVICE=$(DEVICE)
 
-main: my_ocl.c main.c
+main: common.c my_ocl.c main.c
 	$(CC) $^ $(CCFLAGS) $(LIBS) -o $@
 
 
