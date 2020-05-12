@@ -34,10 +34,12 @@ int main(int argc, char **argv)
 	int n;	
 	float *darray1D;
 	float *darray1D_trans;
+    float *darray1D_transLocal;
 
 	float *array1D;
 	float *array1D_trans;
 	float *array1D_trans_GPU;
+    float *array1D_trans_GPULocal;
 	
 	// OpenCL host variables
 	cl_uint num_devs_returned;
@@ -73,6 +75,7 @@ int main(int argc, char **argv)
 	array1D           = getmemory1D( n*n );
 	array1D_trans     = getmemory1D( n*n );
 	array1D_trans_GPU = getmemory1D( n*n );
+    array1D_trans_GPULocal = getmemory1D( n * n);
 
 	init1Drand(array1D, n*n);
 
@@ -189,13 +192,20 @@ int main(int argc, char **argv)
 	}
 
 	// create buffer objects to input and output args of kernel function
-	darray1D       =   ....;
+	darray1D       =   clCreateBuffer(context, CL_MEM_READ_ONLY ,  sizeof(float) * n*n, NULL, NULL);
+	darray1D_trans =   clCreateBuffer(context, CL_MEM_WRITE_ONLY,  sizeof(float) * n*n, NULL, NULL);
 
-	darray1D_trans =   ....;
+    // Write a and b vectors into compute device memory 
+    err = clEnqueueWriteBuffer(command_queue, darray1D, CL_TRUE, 0, sizeof(float) * n*n, array1D, 0, NULL, NULL);
+    if (err != CL_SUCCESS)
+    {
+        printf("Error: Failed to write array1D to source array!\n%s\n", err_code(err));
+        exit(1);
+    }
 
 	// set the kernel arguments
-	if ( clSetKernelArg(kernel, 0, sizeof(cl_mem), &....) ||
-         clSetKernelArg(kernel, 1, sizeof(cl_mem), &.....) ||
+	if ( clSetKernelArg(kernel, 0, sizeof(cl_mem), &darray1D_trans) ||
+         clSetKernelArg(kernel, 1, sizeof(cl_mem), &darray1D) ||
          clSetKernelArg(kernel, 2, sizeof(cl_uint), &n) != CL_SUCCESS)
 	{
 		printf("Unable to set kernel arguments. Error Code=%d\n",err);
@@ -226,10 +236,10 @@ int main(int argc, char **argv)
 	clFinish(command_queue);
 
 	// read the output back to host memory
-	err = clEnqueueReadBuffer(....);
+	err = clEnqueueReadBuffer(command_queue, darray1D_trans, CL_TRUE, 0, sizeof(float) * n * n, array1D_trans_GPU, 0, NULL, NULL);
 	if (err != CL_SUCCESS)
 	{	
-		printf("Error enqueuing read buffer command. Error Code=%d\n",err);
+		printf("Error enqueuing read buffer command. Error Code=%d (%s)\n",err, err_code(err));
 		exit(1);
 	}
 
@@ -239,10 +249,17 @@ int main(int argc, char **argv)
 	transpose1D(array1D, array1D_trans, n);
 	double t1h = getMicroSeconds();
 
-	if (check(array1D_trans_GPU, array1D_trans, n*n))
+	if (check(array1D_trans_GPU, array1D_trans, n*n)) {
 		printf("\n\nTranspose Host-Device differs!!\n");
-	else
+        // printf("Input:\n");
+        // printMATRIX(array1D, n);
+        // printf("Output CPU:\n");
+        // printMATRIX(array1D_trans, n);
+        // printf("Output GPU:\n");
+        // printMATRIX(array1D_trans_GPU, n);
+    } else {
 		printf("\n\nTranspose Host-Device tHost=%f (s.) tDevice=%f (s.)\n", (t1h-t0h)/1000000, (t1d-t0d)/1000000);
+    }
 
 
 //	printMATRIX(array1D, n);
