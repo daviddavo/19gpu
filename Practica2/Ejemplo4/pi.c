@@ -37,7 +37,7 @@ int main(int argc, char **argv)
 	double t0, t1;
 	double pi;
 
-	if (argc==2){
+	if (argc==3){
 		n = atoi(argv[1]);
 	} else {
 		printf("./exec n [c,g] \n");
