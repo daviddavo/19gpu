@@ -16,8 +16,6 @@ int remove_noiseOCL(float *im, float *image_out,
 	float thredshold, int window_size,
 	int height, int width)
 {
-	printf("Not Implemented yet!!\n");
-
     cl_mem dim;
     cl_mem dim_out;
 
@@ -168,8 +166,10 @@ int remove_noiseOCL(float *im, float *image_out,
 	// set the kernel arguments
     err  = clSetKernelArg(kernel_naive, 0, sizeof(cl_mem), &dim_out);
     err |= clSetKernelArg(kernel_naive, 1, sizeof(cl_mem), &dim);
-    err |= clSetKernelArg(kernel_naive, 2, sizeof(cl_uint), &width);
-    err |= clSetKernelArg(kernel_naive, 3, sizeof(cl_uint), &height); 
+    err |= clSetKernelArg(kernel_naive, 2, sizeof(cl_float), &thredshold);
+    err |= clSetKernelArg(kernel_naive, 3, sizeof(cl_uint), &window_size);
+    err |= clSetKernelArg(kernel_naive, 4, sizeof(cl_uint), &width);
+    err |= clSetKernelArg(kernel_naive, 5, sizeof(cl_uint), &height); 
 	if (err != CL_SUCCESS)
 	{
 		printf("Unable to set kernel arguments. Error Code=%d (%s)\n",err, err_code(err));
@@ -178,8 +178,8 @@ int remove_noiseOCL(float *im, float *image_out,
 
 	// set the global work dimension size
     // TODO: Revise this
-	global[0] = height;
-	global[1] = width;
+	global[0] = width;
+	global[1] = height;
     work[0] = BLOCK_DIM;
     work[1] = BLOCK_DIM;
 
