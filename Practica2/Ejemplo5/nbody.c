@@ -5,6 +5,8 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+#include "my_ocl.h"
+
 double get_time(){
 	static struct timeval 	tv0;
 	double time_, time;
@@ -67,10 +69,12 @@ void integrate(body *p, float dt, int n){
 	}
 }
 
-void nbodies(int nBodies)
+void nbodies(const int nBodies, const int nIters)
 {
 	const float dt = 0.01f; // time step
-	const int nIters = 100;  // simulation iterations
+
+    // Note: Now it's another argument of the function
+	// const int nIters = 100;  // simulation iterations
 
 	body *p = (body*)malloc(nBodies*sizeof(body));
 
@@ -107,7 +111,7 @@ int main(const int argc, const char** argv) {
 	switch (argv[2][0]) {
 		case 'c':
 			t0 = get_time();
-			nbodies(nBodies);
+			nbodies(nBodies, 100);
 			t1 = get_time();
 			printf("CPU Exection time %f ms.\n", t1-t0);
 			break;

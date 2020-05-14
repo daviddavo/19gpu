@@ -2,5 +2,5 @@
 
 #define _OCL_H
 
-void nbodiesOCL(int nBodies);
+int nbodiesOCL(int nBodies);
 #endif
