@@ -1,6 +1,8 @@
-#ifndef _OCL_H
+#ifndef _OCL_H_
 
-#define _OCL_H
+#define _OCL_H_
 
-int nbodiesOCL(int nBodies);
-#endif
+typedef struct { float m, x, y, z, vx, vy, vz; } body;
+
+int nbodiesOCL(body * data, const int nBodies, const int nIters, const float dt);
+#endif // _OCL_H_

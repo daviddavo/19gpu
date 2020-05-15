@@ -1,6 +1,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -13,12 +14,12 @@ double get_time(){
 
 	gettimeofday(&tv0,(struct timezone*)0);
 	time_=(double)((tv0.tv_usec + (tv0.tv_sec)*1000000));
-	time = time_/1000000;
+	time = time_/1000;
 	return(time);
 }
 
 
-typedef struct { float m, x, y, z, vx, vy, vz; } body;
+// typedef struct { float m, x, y, z, vx, vy, vz; } body;
 
 void randomizeBodies(body *data, int n) {
 	for (int i = 0; i < n; i++) {
@@ -66,21 +67,21 @@ void integrate(body *p, float dt, int n){
 		p[i].x += p[i].vx*dt;
 		p[i].y += p[i].vy*dt;
 		p[i].z += p[i].vz*dt;
+        // printf("k: %d, i: %d, bodypos: (%f, %f, %f), bodyvel: (%f, %f, %f)\n",
+            // -1, i, p[i].x, p[i].y, p[i].z, p[i].vx, p[i].vy, p[i].vz);
 	}
 }
 
-void nbodies(const int nBodies, const int nIters)
+void nbodies(body * p, const int nBodies, const int nIters, const float dt)
 {
-	const float dt = 0.01f; // time step
-
-    // Note: Now it's another argument of the function
-	// const int nIters = 100;  // simulation iterations
-
-	body *p = (body*)malloc(nBodies*sizeof(body));
-
-	randomizeBodies(p, nBodies); // Init pos / vel data
-
+    // Note: Now nIters and dt are another argument of the function
 	double t0 = get_time();
+
+    // for (int i = 0; i < nBodies; i++) {
+        // printf("i: %d, bodymass: %f\n", i, p[i].m);
+        // printf("k: %d, i: %d, bodypos: (%f, %f, %f), bodyvel: (%f, %f, %f)\n",
+            // 0, i, p[i].x, p[i].y, p[i].z, p[i].vx, p[i].vy, p[i].vz);
+    // }
 
 	for (int iter = 1; iter <= nIters; iter++) {
 		bodyForce(p, dt, nBodies); // compute interbody forces
@@ -89,42 +90,103 @@ void nbodies(const int nBodies, const int nIters)
 
 	double totalTime = get_time()-t0; 
 	printf("%d Bodies with %d iterations: %0.3f Millions Interactions/second\n", nBodies, nIters, 1e-6 * nBodies * nBodies / totalTime);
+}
 
-	free(p);
+char checkCPUGPU (const body * pcpu, const body * pgpu, 
+const unsigned int nBodies, const float e) 
+{
+    for (int i = 0; i < nBodies; i++) {
+        // We assume mass is the same
+        if (fabsf(pcpu[i].x - pgpu[i].x) >= e 
+            || fabsf(pcpu[i].y - pgpu[i].y) >= e
+            || fabsf(pcpu[i].z - pgpu[i].z) >= e) {
+            printf("Warning: position is not the same! (body %d)\n", i);
+            return EXIT_FAILURE;
+        }
+
+        if (fabsf(pcpu[i].vx - pgpu[i].vx) >= e
+            || fabsf(pcpu[i].vy - pgpu[i].vy) >= e
+            || fabsf(pcpu[i].vz - pgpu[i].vz) >= e) {
+            printf("Warning: velocity is not the same! (body %d)\n", i);
+            return EXIT_FAILURE;
+        }
+    }
+
+    return EXIT_SUCCESS;
 }
 
 
 int main(const int argc, const char** argv) {
 
 	int nBodies = 1000;
-	double t0, t1;
+    int nSteps = 100;
+	double t0, t1, tgpu, tcpu;
+    
+    if (argc < 3 || argc > 4) {
+        printf("%s nbodies [c,g] [steps]\n", argv[0]);
+        return -1;
+    }
 
-	if (argc == 3) 
+	if (argc >= 3)
 		nBodies = atoi(argv[1]);
-	else {
 
-		printf("./exec nbodies [c,g] \n");
-		return(-1);
-	}
+    if (argc == 4)
+        nSteps = atoi(argv[3]);
 
+	body *p = (body*)malloc(nBodies*sizeof(body));
+    body *pgpu;
+	randomizeBodies(p, nBodies); // Init pos / vel data
 
 	switch (argv[2][0]) {
 		case 'c':
 			t0 = get_time();
-			nbodies(nBodies, 100);
+			nbodies(p, nBodies, nSteps, 0.01f);
 			t1 = get_time();
 			printf("CPU Exection time %f ms.\n", t1-t0);
 			break;
 		case 'g':
+            pgpu = (body*)calloc(sizeof(body), nBodies);
+            memcpy(pgpu, p, sizeof(body)*nBodies);
 			t0 = get_time();
-			nbodiesOCL(nBodies);
+            if (nbodiesOCL(pgpu, nBodies, nSteps, 0.01f) != EXIT_SUCCESS) {
+                fprintf(stderr, "Failed to run simulation on GPU\n");
+                break;
+            }
 			t1 = get_time();
-			printf("OCL Exection time %f ms.\n", t1-t0);
+            tgpu = t1 - t0;
+
+			printf("OCL Exection time %f ms.\n", tgpu);
+            char c = 1;
+            if (tgpu > 1000) {
+                printf("Warning!. Comparing against CPU would take a long time (about 20 times longer).\nContinue? (y/n): ");
+                while ( (c=getchar()) != 'y' && c != 'n' ) {}
+                c = c == 'y';
+            }
+
+            if (c) {
+                t0 = get_time();
+                nbodies(p, nBodies, nSteps, 0.01f);
+                t1 = get_time();
+                tcpu = t1-t0;
+
+                printf("CPU Exection time %f ms.\n", tcpu);
+                if(checkCPUGPU(p, pgpu, nBodies, 0.1f)) {
+                    printf("Warning!!, CPU != GPU. This is normal for more than 50 iterations (it's a chaotic system and little problems with rounding can cause large variations in results)\n");
+                } else {
+                    printf("Success. CPU == GPU\n");
+                }
+            } else {
+                printf("Not checking against CPU\n");
+            }
+
+            free(pgpu);
 			break;
 		default:
 			printf("Not Implemented yet!!\n");
 
 
 	}
-	return(1);
+
+    free(p);
+	return(0);
 }

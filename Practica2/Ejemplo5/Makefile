@@ -3,7 +3,7 @@ ifndef CC
 	CC = gcc
 endif
 
-CCFLAGS=-O3 -lm -Wno-deprecated-declarations
+CCFLAGS=-lm -Wno-deprecated-declarations
 
 LIBS = -lOpenCL -fopenmp
 TARGETS = common.c my_ocl.c nbody.c 
@@ -23,6 +23,14 @@ ifeq ($(PLATFORM), Darwin)
 endif
 
 CCFLAGS += -D DEVICE=$(DEVICE)
+
+all: release
+
+debug: CCFLAGS += -g3 -DDEBUG
+debug: main
+
+release: CCFLAGS += -O3
+release: main
 
 main: $(TARGETS)
 	$(CC) $^ $(CCFLAGS) $(LIBS) -o $@
