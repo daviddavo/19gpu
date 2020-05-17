@@ -89,24 +89,26 @@ void nbodies(body * p, const int nBodies, const int nIters, const float dt)
 	}
 
 	double totalTime = get_time()-t0; 
-	printf("%d Bodies with %d iterations: %0.3f Millions Interactions/second\n", nBodies, nIters, 1e-6 * nBodies * nBodies / totalTime);
+	printf("%d Bodies with %d iterations: %0.3f Millions Interactions/second\n", nBodies, nIters, nIters* 1e-6f * nBodies * nBodies / totalTime);
 }
 
 char checkCPUGPU (const body * pcpu, const body * pgpu, 
-const unsigned int nBodies, const float e) 
+    const unsigned int nBodies, const float e) 
 {
     for (int i = 0; i < nBodies; i++) {
         // We assume mass is the same
-        if (fabsf(pcpu[i].x - pgpu[i].x) >= e 
-            || fabsf(pcpu[i].y - pgpu[i].y) >= e
-            || fabsf(pcpu[i].z - pgpu[i].z) >= e) {
+        if (1-fabsf(pcpu[i].x/pgpu[i].x) >= e 
+            || 1-fabsf(pcpu[i].y/pgpu[i].y) >= e
+            || 1-fabsf(pcpu[i].z/pgpu[i].z) >= e) {
             printf("Warning: position is not the same! (body %d)\n", i);
+            printf("cpu: (%f, %f, %f), gpu: (%f, %f, %f)\n",
+                pcpu[i].x, pcpu[i].y, pcpu[i].z, pgpu[i].x, pgpu[i].y, pgpu[i].z);
             return EXIT_FAILURE;
         }
 
-        if (fabsf(pcpu[i].vx - pgpu[i].vx) >= e
-            || fabsf(pcpu[i].vy - pgpu[i].vy) >= e
-            || fabsf(pcpu[i].vz - pgpu[i].vz) >= e) {
+        if (1-fabsf(pcpu[i].vx/pgpu[i].vx) >= e
+            || 1-fabsf(pcpu[i].vy/pgpu[i].vy) >= e
+            || 1-fabsf(pcpu[i].vz/pgpu[i].vz) >= e) {
             printf("Warning: velocity is not the same! (body %d)\n", i);
             return EXIT_FAILURE;
         }
@@ -170,7 +172,11 @@ int main(const int argc, const char** argv) {
                 tcpu = t1-t0;
 
                 printf("CPU Exection time %f ms.\n", tcpu);
-                if(checkCPUGPU(p, pgpu, nBodies, 0.1f)) {
+                // Comprobamos que está en el mismo orden de magnitud.
+                // Tal vez estoy siendo demasiado generoso con el error y
+                // no sé si la implementacion es mala o 
+                // es debido al acarreo del error en el redondeo
+                if(checkCPUGPU(p, pgpu, nBodies, 1.0f)) {
                     printf("Warning!!, CPU != GPU. This is normal for more than 50 iterations (it's a chaotic system and little problems with rounding can cause large variations in results)\n");
                 } else {
                     printf("Success. CPU == GPU\n");

@@ -19,7 +19,7 @@ __kernel void pi_naive(
     arr_area[get_local_id(0)] = 4.0/(1.0 + x*x); 
 
     if (get_local_id(0) == 0) {
-        // TODO: Unfold
+        // TODO: Unfold && reduce
         for (int j = 1; j < get_local_size(0); j++) {
             arr_area[0] += arr_area[j];
         }

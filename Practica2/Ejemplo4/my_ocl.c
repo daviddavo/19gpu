@@ -74,8 +74,8 @@ double calc_piOCL(int n)
     CL_CHECK(clEnqueueReadBuffer(command_queue, dpi_arr, CL_TRUE, 0,
         sizeof(float) * nblocks, pi_arr, 0, NULL, NULL));
 
-    // TODO: To opencl
-    // Maybe make one thread do it
+    // This is faster on CPU than if I make one thread do it
+    // TODO: Determine boundary in which making it on host becomes slower
     pi = 0.0f;
     for (int i = 0; i < nblocks; i++) {
         pi += pi_arr[i];

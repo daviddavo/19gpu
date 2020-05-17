@@ -177,7 +177,6 @@ int remove_noiseOCL(float *im, float *image_out,
 	}
 
 	// set the global work dimension size
-    // TODO: Revise this
 	global[0] = width;
 	global[1] = height;
     work[0] = BLOCK_DIM;

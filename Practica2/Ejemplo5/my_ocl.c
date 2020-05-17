@@ -95,7 +95,7 @@ int nbodiesOCL(body * data, const int nBodies, const int nIters, const float dt)
     // tstart and tend are nanoseconds
     double ms = ((double)(tend - tstart))/(1000000.0l);
     printf("Total Kernel duration: %0.5lfms\n", ms);
-    printf("%d bodies with %d iterations: %f Millions Interactions/second\n", nBodies, nIters, nBodies*nBodies*1e3/ms);
+    printf("%d bodies with %d iterations: %f Millions Interactions/second\n", nBodies, nIters, nIters*nBodies*nBodies*1e-6/ms);
 
     CL_CHECK(clReleaseMemObject(dbweight));
     CL_CHECK(clReleaseMemObject(dbvelin));

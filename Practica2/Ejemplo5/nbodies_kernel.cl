@@ -33,14 +33,15 @@ __kernel void nbodies_naive(
         for (int j = 0; j < get_global_size(0); j++) {
             if (i != j) {
                 float3 d = bodypos[j] - bodypos[i];
-                float3 invd = 1.0f / sqrt(dot(d, d)); 
-                float3 invd3 = invd*invd*invd;
+                float invd = 1.0f / sqrt(dot(d, d)); 
+                float invd3 = invd*invd*invd;
                 
                 F += G * bodymass[i] * bodymass[j] * d * invd3;
             }
         }
 
         // F=m*a
+        barrier(CLK_GLOBAL_MEM_FENCE);
         bodyvel[i] += dt*F/bodymass[i];
         bodypos[i] += bodyvel[i] * dt; 
         /* printf("k: %d, i: %d, bodypos: (%f, %f, %f), bodyvel: (%f, %f, %f)\n", */
