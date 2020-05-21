@@ -33,10 +33,12 @@ void randomizeBodies(body *data, int n) {
 }
 
 void bodyForce(body *p, float dt, int n) {
-
+    #pragma acc data present(p[:n])
+    #pragma acc parallel loop
 	for (int i = 0; i < n; i++) { 
 		float Fx = 0.0f; float Fy = 0.0f; float Fz = 0.0f;
 
+        #pragma acc loop gang reduction(+:Fx) reduction(+:Fy) reduction(+:Fz)
 		for (int j = 0; j < n; j++) {
 			if (i!=j) {
 				float dx = p[j].x - p[i].x;
@@ -60,6 +62,8 @@ void bodyForce(body *p, float dt, int n) {
 }
 
 void integrate(body *p, float dt, int n){
+    #pragma acc data present(p[:n])
+    #pragma acc parallel loop
 	for (int i = 0 ; i < n; i++) {
 		p[i].x += p[i].vx*dt;
 		p[i].y += p[i].vy*dt;
@@ -81,6 +85,8 @@ int main(const int argc, const char** argv) {
 
 	double t0 = get_time();
 
+    #pragma acc data copy(p[:nBodies])
+    #pragma loop seq
 	for (int iter = 1; iter <= nIters; iter++) {
 		bodyForce(p, dt, nBodies); // compute interbody forces
 		integrate(p, dt, nBodies); // integrate position
