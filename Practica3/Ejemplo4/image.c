@@ -140,7 +140,6 @@ void border(float *im, float *image_out,
 	int i, j, ii, jj;
 
 	float filt[3*3];
-	float tmp;
 	int window_size = 3;
 	int ws2 = (window_size-1)>>1; 
 
@@ -151,16 +150,18 @@ void border(float *im, float *image_out,
 	filt[3] = -1.0; filt[4] =  4.0; filt[5] = -1.0;
 	filt[6] =  0.0; filt[7] = -1.0; filt[8] =  0.0;
 
-#pragma acc ...
+#pragma acc data copyin(im[:height*width]) copyin(filt) copyout(image_out[:height*width])
 {
 
 	t0 = get_time();
 
+    #pragma acc parallel loop collapse(2)
 	for(i=ws2; i<height-ws2; i++)
 	{
 		for(j=ws2; j<width-ws2; j++)
 		{
-			tmp = 0.0;
+			float tmp = 0.0;
+            #pragma acc loop reduction(+:tmp) collapse(2)
 			for (ii =-ws2; ii<=ws2; ii++)
 			{
 				for (jj =-ws2; jj<=ws2; jj++)

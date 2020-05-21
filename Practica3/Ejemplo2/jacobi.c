@@ -52,7 +52,7 @@ int main(int argc, char** argv)
 
 	int iter = 0;
 
-#pragma acc ...
+    #pragma acc data copy(A[:m*n]) create(Anew[:m*n])
 {
 	StartTimer();
 
@@ -60,8 +60,10 @@ int main(int argc, char** argv)
 	{
 		error = 0.0;
 
+        #pragma acc parallel loop reduction(max:error)
 		for( int j = 1; j < n-1; j++)
 		{
+            #pragma acc loop reduction(max:error)
 			for( int i = 1; i < m-1; i++ )
 			{
 				Anew[j*m+i] = 0.25 * ( A[j*m+i+1] + A[j*m+i-1]
@@ -70,8 +72,10 @@ int main(int argc, char** argv)
 			}
 		}
 
+        #pragma acc parallel loop
 		for( int j = 1; j < n-1; j++)
 		{
+            #pragma acc loop
 			for( int i = 1; i < m-1; i++ )
 			{
 				A[j*m+i] = Anew[j*m+i];    
@@ -84,6 +88,7 @@ int main(int argc, char** argv)
 	}
 	runtime = GetTimer();
 }
+	printf("%5d, %0.6f\n", iter, error);
 
 	printf(" total: %f s\n", runtime / 1000);
 }

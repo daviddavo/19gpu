@@ -73,6 +73,7 @@ int main (int argc, const char *argv[])
     }
 
 	t0 = get_time();    
+    #pragma acc loop seq
 	for(i=0; i<n; i++)
 		y[i] = a*x[i] + y[i];
 

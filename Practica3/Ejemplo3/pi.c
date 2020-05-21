@@ -34,11 +34,15 @@ int main(int argc, char **argv)
 
 	t0 = get_time();
 	area= 0.0;
-#pragma acc ...
+
+    // Nota: Tarda menos con el SIMD que en gpu
+    #pragma acc data copy(area)
+    #pragma acc parallel loop reduction(+:area) private(x)
 	for(i=1; i<n; i++) {
-		x = (i+0.5)/n;
+	    x = (i+0.5)/n;
 		area += 4.0/(1.0 + x*x);
 	}
+
 	pi = area/n;
 	t1 = get_time();
 	printf("PI=%3.10f time=%lf (s)\n", pi, t1-t0);
