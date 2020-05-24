@@ -5,6 +5,7 @@
 #include <string.h>
 #include <math.h>
 #include <sys/time.h>
+#include <assert.h>
 
 ////////////////////////////////////////////////////////////////////////////////
 // declaration, forward
@@ -236,10 +237,12 @@ void runTest( int argc, char** argv)
 
 	tmp1 = (char *)malloc( (max_cols+max_rows) * sizeof(char) );
 	tmp2 = (char *)malloc( (max_cols+max_rows) * sizeof(char) );
+
 	for( int i=0; i<max_cols+max_rows-1 ; i++){
 		tmp1[i]='-';
 		tmp2[i]='-';
 	}
+
 	tmp1[max_cols+max_rows]='\0';
 	tmp2[max_cols+max_rows]='\0';
 	output1 = (char *)malloc( (max_cols+max_rows) * sizeof(char) );
@@ -269,13 +272,28 @@ void runTest( int argc, char** argv)
 	for( int j = 1; j< max_cols ; j++)
 		nw_matrix[j] = j * penalty;
 
-
+    #pragma acc data copy_out(nw_matrix[:max_rows*max_cols]) copyin(blosum62) copyin(input1[:max_cols]) copyin(input2[:max_rows])
+    {
 	/********************/
 	/* Needleman-Wunsch */
 	/********************/
 	t0 = gettime();
+
 	/* Compute top-left matrix */
+    // Como la dependencia es hacia arriba, arriba-izquierda, e izquierda,
+    // no tendremos ningun problema de dependencia si hacemos el algoritmo 
+    // "por diagonales" (/). Esto significaría que en la primera iteración 
+    // calcularíamos 1 elemento, luego 2, 3, 4... Así hasta llegar a
+    // min(rows, cols) y volver a bajar el numero de elementos procesados en
+    // paralelo.
+    
+    #define _SKEWING
+    
+    #ifndef _SKEWING
+    printf("Not Skewing :(\n");
+    #pragma acc kernels
 	for( int i = 0 ; i < max_rows-2 ; i++){
+        // #pragma acc loop seq
 		for( idx = 0 ; idx <= i ; idx++){
 			index = (idx + 1) * max_cols + (i + 1 - idx);
 
@@ -293,8 +311,36 @@ void runTest( int argc, char** argv)
 			nw_matrix[index] = MAXIMUM(match, delet, insert);
 		}
 	}
+    #else
+    printf("Skewing, yeah!\n");
+    #pragma acc parallel loop independent
+    for (int i = 1; i <= 2*(max_rows); i++) {
+        #pragma acc loop seq
+        for (int idx=fmax(1,i-max_rows); idx <= fmin(max_rows-1, i-1); idx++) {
+            index = (idx) * max_cols + (i-idx);
+            printf("Index: % 4d (%2d, %2d), i: %2d, idx: %2d\n", index, index/max_cols, index%max_cols, i, idx);
+
+            if (blosum) {
+                S = blosum62[input1[i-idx]][input2[idx]];
+            } else {
+                S = (input1[i-idx] == input2[idx])?1:-1;
+            }
+
+            match  = nw_matrix[index-1-max_cols] + S;
+            delet  = nw_matrix[index-1] + penalty;
+            insert = nw_matrix[index-max_cols] + penalty;
+
+            if (nw_matrix[index] != 0) {
+                printf("Assert going to fail with i: %d, idx: %d, index: %d\n", i, idx, index);
+            }
+            assert(nw_matrix[index] == 0);
+            nw_matrix[index] = MAXIMUM(match, delet, insert);
+        }
+    }
+    #endif
 
 	/* Compute diagonals matrix */
+    #pragma acc kernels
 	for( int i = max_rows-2; i < max_cols-2 ; i++){
 		for( idx = 0 ; idx <= max_rows-2; idx++){
 			index = (idx + 1) * max_cols + (i + 1 - idx);
@@ -315,6 +361,7 @@ void runTest( int argc, char** argv)
 	}
 
 	/* Compute bottom-right matrix */
+    #pragma acc kernels
 	for( int i = max_rows-2; i >= 0 ; i--){
 		for( idx = 0 ; idx <= i; idx++){
 			index =  ( idx+max_rows-1-i ) * max_cols + max_cols-idx-1 ;
@@ -335,6 +382,8 @@ void runTest( int argc, char** argv)
 	}
 
 	t1 = gettime();
+
+    }
 
 	printf("\nPerformance %f GCUPS\n", 1.0e-9*((max_rows-1)*(max_cols-1)/(t1-t0)));
 	
