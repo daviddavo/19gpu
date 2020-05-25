@@ -262,6 +262,9 @@ void runTest( int argc, char** argv)
 
 
 	/* Initialization */
+    // Nota: Si fuesemos a tratar con matrices de tamaños muy grandes, tal vez
+    // podríamos hacer la inicialización en device para ahorrarnos el memcpy
+    // Pero es demasiado dependiente del dispositivo que usemos
 	for (int i = 0 ; i < max_rows; i++)
 		for (int j = 0 ; j < max_cols; j++)
 			nw_matrix[i*max_cols+j]=0;
@@ -272,7 +275,7 @@ void runTest( int argc, char** argv)
 	for( int j = 1; j< max_cols ; j++)
 		nw_matrix[j] = j * penalty;
 
-    #pragma acc data copy_out(nw_matrix[:max_rows*max_cols]) copyin(blosum62) copyin(input1[:max_cols]) copyin(input2[:max_rows])
+    #pragma acc data copy(nw_matrix[:max_rows*max_cols]) copyin(blosum62) copyin(input1[:max_cols]) copyin(input2[:max_rows])
     {
 	/********************/
 	/* Needleman-Wunsch */
@@ -332,7 +335,7 @@ void runTest( int argc, char** argv)
 	
 
 
-// #define TRACEBACK
+#define TRACEBACK
 #ifdef TRACEBACK
 	printf("        ");
 	for (int i = 0 ; i < max_cols-1; i++)
