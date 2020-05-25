@@ -285,40 +285,23 @@ void runTest( int argc, char** argv)
     // "por diagonales" (/). Esto significaría que en la primera iteración 
     // calcularíamos 1 elemento, luego 2, 3, 4... Así hasta llegar a
     // min(rows, cols) y volver a bajar el numero de elementos procesados en
-    // paralelo.
-    
-    #define _SKEWING
-    
-    #ifndef _SKEWING
-    printf("Not Skewing :(\n");
-    #pragma acc kernels
-	for( int i = 0 ; i < max_rows-2 ; i++){
-        // #pragma acc loop seq
-		for( idx = 0 ; idx <= i ; idx++){
-			index = (idx + 1) * max_cols + (i + 1 - idx);
-
-			if (blosum)
-				S = blosum62[input1[i - idx]][input2[idx]];
-			else
-				if (input1[i - idx] == input2[idx])
-					S = 1;
-				else S=-1;
-
-			match  = nw_matrix[index-1-max_cols] + S;
-			delet  = nw_matrix[index-1] + penalty;
-			insert = nw_matrix[index-max_cols] + penalty;
-
-			nw_matrix[index] = MAXIMUM(match, delet, insert);
-		}
-	}
-    #else
-    printf("Skewing, yeah!\n");
+    // paralelo. Además lo computamos todo en un solo bucle en lugar de 3.
+    // [1] ECE 1754. Survey of Loop Transformation Techniques. Eric LaForest, 2010
     int n_rows = max_rows - 1 ;
     int n_cols = max_cols - 1;
 
+    // The outer loop runs on host, spawning new workers every time
+    // (1,2,3,4,5,4,3,2,1) for example
+
+    #pragma acc loop seq
     for (int j = 2; j <= 2*n_rows; j++) {
-        #pragma acc parallel loop independent
-        for (int idx=fmax(1,j-n_cols); idx <= fmin(n_rows, j-1); idx++) {
+        // I couldnt find a directive to tell the compiler that these were
+        // constant, so I created two variables
+        int start = fmax(1,j-n_cols);
+        int end = fmin(n_rows, j-1);
+
+        #pragma acc parallel loop gang independent
+        for (int idx=start; idx <= end; idx++) {
             index = (idx) * max_cols + j-idx;
             // printf("Index: % 4d (%2d, %2d), j: %2d, idx: %2d, val: %d\n", index, index/max_cols, index%max_cols, j, idx, nw_matrix[index]);
 
@@ -340,49 +323,6 @@ void runTest( int argc, char** argv)
             nw_matrix[index] = MAXIMUM(match, delet, insert);
         }
     }
-    #endif
-
-	/* Compute diagonals matrix */
-    #pragma acc kernels
-	for( int i = max_rows-2; i < max_cols-2 ; i++){
-		for( idx = 0 ; idx <= max_rows-2; idx++){
-			index = (idx + 1) * max_cols + (i + 1 - idx);
-
-			if (blosum)
-				S = blosum62[input1[i - idx]][input2[idx]];
-			else
-				if (input1[i - idx] == input2[idx])
-					S = 1;
-				else S=-1;
-
-			match  = nw_matrix[index-1-max_cols] + S;
-			delet  = nw_matrix[index-1] + penalty;
-			insert = nw_matrix[index-max_cols] + penalty;
-
-			nw_matrix[index] = MAXIMUM(match, delet, insert);
-		}
-	}
-
-	/* Compute bottom-right matrix */
-    #pragma acc kernels
-	for( int i = max_rows-2; i >= 0 ; i--){
-		for( idx = 0 ; idx <= i; idx++){
-			index =  ( idx+max_rows-1-i ) * max_cols + max_cols-idx-1 ;
-
-			if (blosum)
-				S = blosum62[input1[max_cols-idx-2]][input2[idx+max_rows-2-i]];
-			else
-				if (input1[idx+max_rows-2-i] == input2[max_cols-idx-2])
-					S = 1;
-				else S=-1;
-
-			match  = nw_matrix[index-1-max_cols] + S;
-			delet  = nw_matrix[index-1] + penalty;
-			insert = nw_matrix[index-max_cols] + penalty;
-
-			nw_matrix[index] = MAXIMUM(match, delet, insert);
-		}
-	}
 
 	t1 = gettime();
 
@@ -392,7 +332,7 @@ void runTest( int argc, char** argv)
 	
 
 
-#define TRACEBACK
+// #define TRACEBACK
 #ifdef TRACEBACK
 	printf("        ");
 	for (int i = 0 ; i < max_cols-1; i++)
