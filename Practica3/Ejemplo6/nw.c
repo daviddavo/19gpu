@@ -313,27 +313,30 @@ void runTest( int argc, char** argv)
 	}
     #else
     printf("Skewing, yeah!\n");
-    #pragma acc parallel loop independent
-    for (int i = 1; i <= 2*(max_rows); i++) {
-        #pragma acc loop seq
-        for (int idx=fmax(1,i-max_rows); idx <= fmin(max_rows-1, i-1); idx++) {
-            index = (idx) * max_cols + (i-idx);
-            printf("Index: % 4d (%2d, %2d), i: %2d, idx: %2d\n", index, index/max_cols, index%max_cols, i, idx);
+    int n_rows = max_rows - 1 ;
+    int n_cols = max_cols - 1;
+
+    for (int j = 2; j <= 2*n_rows; j++) {
+        #pragma acc parallel loop independent
+        for (int idx=fmax(1,j-n_cols); idx <= fmin(n_rows, j-1); idx++) {
+            index = (idx) * max_cols + j-idx;
+            // printf("Index: % 4d (%2d, %2d), j: %2d, idx: %2d, val: %d\n", index, index/max_cols, index%max_cols, j, idx, nw_matrix[index]);
 
             if (blosum) {
-                S = blosum62[input1[i-idx]][input2[idx]];
+                S = blosum62[input1[j-idx-1]][input2[idx-1]];
             } else {
-                S = (input1[i-idx] == input2[idx])?1:-1;
+                S = (input1[j-idx-1] == input2[idx-1])?1:-1;
             }
 
-            match  = nw_matrix[index-1-max_cols] + S;
+            match  = nw_matrix[index-max_cols-1] + S;
             delet  = nw_matrix[index-1] + penalty;
             insert = nw_matrix[index-max_cols] + penalty;
-
-            if (nw_matrix[index] != 0) {
-                printf("Assert going to fail with i: %d, idx: %d, index: %d\n", i, idx, index);
-            }
-            assert(nw_matrix[index] == 0);
+            // printf("  S: %d, m: %d, d: %d, i: %d\n", S, match, delet, insert);
+            
+            // if (nw_matrix[index] != 0) {
+            //     printf("Assert going to fail with j: %d, idx: %d, index: %d\n", j, idx, index);
+            // }
+            // assert(nw_matrix[index] == 0);
             nw_matrix[index] = MAXIMUM(match, delet, insert);
         }
     }
