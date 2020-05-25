@@ -155,7 +155,7 @@ void border(float *im, float *image_out,
 
 	t0 = get_time();
 
-    #pragma acc parallel loop collapse(2)
+    #pragma acc parallel loop gang collapse(2)
 	for(i=ws2; i<height-ws2; i++)
 	{
 		for(j=ws2; j<width-ws2; j++)

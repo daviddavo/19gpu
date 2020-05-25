@@ -35,7 +35,7 @@ int main(int argc, char **argv)
 	t0 = get_time();
 	area= 0.0;
 
-    // Nota: Tarda menos con el SIMD que en gpu
+    // Nota: Tarda menos con el SIMD que en gpu...
     #pragma acc data copy(area)
     #pragma acc parallel loop reduction(+:area) private(x)
 	for(i=1; i<n; i++) {

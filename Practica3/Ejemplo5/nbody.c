@@ -32,7 +32,10 @@ void randomizeBodies(body *data, int n) {
 	}
 }
 
-void bodyForce(body *p, float dt, int n) {
+// No conseguí encontrar un pragma para guiar al acelerador que podía fusionar
+// los dos bucles de funciones distintas, así que reorganicé el código en una
+// una sola funcion
+void bodyForceAndIntegrate(body *p, float dt, int n) {
     #pragma acc data present(p[:n])
     #pragma acc parallel loop
 	for (int i = 0; i < n; i++) { 
@@ -58,16 +61,7 @@ void bodyForce(body *p, float dt, int n) {
 		}
 
 		p[i].vx += dt*Fx/p[i].m; p[i].vy += dt*Fy/p[i].m; p[i].vz += dt*Fz/p[i].m;
-	}
-}
-
-void integrate(body *p, float dt, int n){
-    #pragma acc data present(p[:n])
-    #pragma acc parallel loop
-	for (int i = 0 ; i < n; i++) {
-		p[i].x += p[i].vx*dt;
-		p[i].y += p[i].vy*dt;
-		p[i].z += p[i].vz*dt;
+		p[i].x += p[i].vx*dt; p[i].y += p[i].vy*dt; p[i].z += p[i].vz*dt;
 	}
 }
 
@@ -88,8 +82,7 @@ int main(const int argc, const char** argv) {
     #pragma acc data copy(p[:nBodies])
     #pragma loop seq
 	for (int iter = 1; iter <= nIters; iter++) {
-		bodyForce(p, dt, nBodies); // compute interbody forces
-		integrate(p, dt, nBodies); // integrate position
+		bodyForceAndIntegrate(p, dt, nBodies); // compute interbody forces and integrate
 	}
 
 	double totalTime = get_time()-t0; 
